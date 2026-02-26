@@ -1,15 +1,20 @@
 package com.example.pocketledgermd.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.pocketledgermd.data.EntryType
 import com.example.pocketledgermd.data.LedgerEntry
 import com.example.pocketledgermd.data.MarkdownRepository
 import com.example.pocketledgermd.data.MonthSummary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -210,5 +215,32 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         statusMessage = "已删除"
         selectedMonth = YearMonth.from(entry.dateTime)
         reloadSelectedMonth()
+    }
+
+    fun backupLedgerToDirectory(treeUri: Uri) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                repository.backupToExternalTree(treeUri)
+            }
+            statusMessage = if (result.success) {
+                "${result.message}: 成功 ${result.validFiles} 个，跳过 ${result.skippedFiles} 个"
+            } else {
+                result.message
+            }
+        }
+    }
+
+    fun restoreLedgerFromDirectory(treeUri: Uri) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                repository.restoreFromExternalTree(treeUri)
+            }
+            statusMessage = if (result.success) {
+                "${result.message}: 成功 ${result.validFiles} 个，跳过 ${result.skippedFiles} 个"
+            } else {
+                result.message
+            }
+            reloadSelectedMonth()
+        }
     }
 }

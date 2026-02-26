@@ -1,17 +1,31 @@
 package com.example.pocketledgermd.data
 
 import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.io.IOException
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.Year
 import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 import java.util.UUID
+
+data class FileTransferResult(
+    val success: Boolean,
+    val message: String,
+    val totalFiles: Int = 0,
+    val validFiles: Int = 0,
+    val skippedFiles: Int = 0,
+)
 
 class MarkdownRepository(private val context: Context) {
     private val ledgerDir: File by lazy {
         File(context.filesDir, "ledger").apply { mkdirs() }
     }
+    private val monthFilePattern = Regex("""^\d{4}-\d{2}\.md$""")
 
     fun saveEntry(entry: LedgerEntry) {
         val savedEntry = if (entry.id.isNullOrBlank()) {
@@ -174,10 +188,9 @@ class MarkdownRepository(private val context: Context) {
     }
 
     private fun listMonthFiles(): List<File> {
-        val pattern = Regex("""^\d{4}-\d{2}\.md$""")
         return ledgerDir
             .listFiles()
-            ?.filter { it.isFile && pattern.matches(it.name) }
+            ?.filter { it.isFile && monthFilePattern.matches(it.name) }
             ?: emptyList()
     }
 
@@ -193,6 +206,130 @@ class MarkdownRepository(private val context: Context) {
             totalExpense = expense,
             balance = income - expense,
         )
+    }
+
+    fun backupToExternalTree(treeUri: Uri): FileTransferResult {
+        val root = DocumentFile.fromTreeUri(context, treeUri)
+            ?: return FileTransferResult(false, "无法打开目标目录")
+        val targetLedgerDir = root.findFile("ledger")
+            ?: root.createDirectory("ledger")
+            ?: return FileTransferResult(false, "无法创建 ledger 目录")
+
+        val sourceFiles = listMonthFiles()
+        var successCount = 0
+        var skippedCount = 0
+
+        for (file in sourceFiles) {
+            try {
+                val existing = targetLedgerDir.findFile(file.name)
+                if (existing != null && existing.isFile) {
+                    existing.delete()
+                }
+                val target = targetLedgerDir.createFile("text/markdown", file.name)
+                if (target == null) {
+                    skippedCount++
+                    continue
+                }
+
+                context.contentResolver.openOutputStream(target.uri, "w").use { output ->
+                    if (output == null) {
+                        skippedCount++
+                        return@use
+                    }
+                    file.inputStream().use { input ->
+                        input.copyTo(output)
+                    }
+                    successCount++
+                }
+            } catch (_: Exception) {
+                skippedCount++
+            }
+        }
+
+        return FileTransferResult(
+            success = true,
+            message = "备份完成",
+            totalFiles = sourceFiles.size,
+            validFiles = successCount,
+            skippedFiles = skippedCount,
+        )
+    }
+
+    fun restoreFromExternalTree(treeUri: Uri): FileTransferResult {
+        val root = DocumentFile.fromTreeUri(context, treeUri)
+            ?: return FileTransferResult(false, "无法打开源目录")
+
+        val sourceRoot = when {
+            root.findFile("ledger")?.isDirectory == true -> root.findFile("ledger")!!
+            else -> root
+        }
+
+        val sourceFiles = sourceRoot.listFiles().filter { it.isFile }
+        val validSourceFiles = sourceFiles.filter { monthFilePattern.matches(it.name.orEmpty()) }
+        if (validSourceFiles.isEmpty()) {
+            return FileTransferResult(false, "未找到可还原的月度 markdown 文件")
+        }
+
+        try {
+            createLocalSnapshot()
+            clearLocalMonthFiles()
+
+            var restoredCount = 0
+            var skippedCount = 0
+            for (doc in validSourceFiles) {
+                try {
+                    val name = doc.name
+                    if (name == null) {
+                        skippedCount++
+                        continue
+                    }
+                    val target = monthFile(YearMonth.parse(name.removeSuffix(".md")))
+                    context.contentResolver.openInputStream(doc.uri).use { input ->
+                        if (input == null) {
+                            skippedCount++
+                            return@use
+                        }
+                        target.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                        restoredCount++
+                    }
+                } catch (_: Exception) {
+                    skippedCount++
+                }
+            }
+
+            return FileTransferResult(
+                success = true,
+                message = "还原完成",
+                totalFiles = sourceFiles.size,
+                validFiles = restoredCount,
+                skippedFiles = skippedCount + (sourceFiles.size - validSourceFiles.size),
+            )
+        } catch (e: Exception) {
+            return FileTransferResult(false, "还原失败: ${e.message}")
+        }
+    }
+
+    private fun createLocalSnapshot() {
+        val backupName = "ledger_backup_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+        val backupDir = File(context.filesDir, backupName)
+        if (!backupDir.exists() && !backupDir.mkdirs()) {
+            throw IOException("无法创建本地快照目录")
+        }
+
+        for (file in listMonthFiles()) {
+            val target = File(backupDir, file.name)
+            file.inputStream().use { input ->
+                target.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+    }
+
+    private fun clearLocalMonthFiles() {
+        listMonthFiles().forEach { it.delete() }
     }
 
     private fun monthFile(ym: YearMonth): File = File(ledgerDir, "${ym}.md")

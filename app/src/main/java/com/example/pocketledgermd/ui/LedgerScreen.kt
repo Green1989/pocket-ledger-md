@@ -2,6 +2,7 @@ package com.example.pocketledgermd.ui
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +57,30 @@ private fun DateFilter.displayLabel(): String = when (this) {
 fun LedgerScreen(vm: LedgerViewModel) {
     var editingEntry by remember { mutableStateOf<LedgerEntry?>(null) }
     var deletingEntry by remember { mutableStateOf<LedgerEntry?>(null) }
+    var restorePendingUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val context = LocalContext.current
+    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            vm.backupLedgerToDirectory(uri)
+        }
+    }
+    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            restorePendingUri = uri
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -64,6 +91,12 @@ fun LedgerScreen(vm: LedgerViewModel) {
         items(1) { EntryForm(vm) }
         items(1) { MonthNavigator(vm) }
         items(1) { FilterBar(vm) }
+        items(1) {
+            BackupRestoreBar(
+                onBackup = { backupLauncher.launch(null) },
+                onRestore = { restoreLauncher.launch(null) },
+            )
+        }
         if (vm.statusMessage.isNotBlank()) {
             items(1) { Text(vm.statusMessage, color = MaterialTheme.colorScheme.primary) }
         }
@@ -107,6 +140,48 @@ fun LedgerScreen(vm: LedgerViewModel) {
                 }
             },
         )
+    }
+
+    if (restorePendingUri != null) {
+        AlertDialog(
+            onDismissRequest = { restorePendingUri = null },
+            title = { Text("还原数据") },
+            text = { Text("将使用所选目录覆盖当前 ledger 数据，是否继续？") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.restoreLedgerFromDirectory(restorePendingUri!!)
+                        restorePendingUri = null
+                    }
+                ) {
+                    Text("确认还原")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { restorePendingUri = null }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun BackupRestoreBar(onBackup: () -> Unit, onRestore: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(onClick = onBackup) {
+                Text("备份数据")
+            }
+            OutlinedButton(onClick = onRestore) {
+                Text("还原数据")
+            }
+        }
     }
 }
 
