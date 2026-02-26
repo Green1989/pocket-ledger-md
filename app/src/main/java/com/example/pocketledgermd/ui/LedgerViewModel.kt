@@ -204,4 +204,11 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         selectedMonth = YearMonth.from(newDateTime)
         reloadSelectedMonth()
     }
+
+    fun deleteExistingEntry(entry: LedgerEntry) {
+        repository.deleteEntry(entry)
+        statusMessage = "已删除"
+        selectedMonth = YearMonth.from(entry.dateTime)
+        reloadSelectedMonth()
+    }
 }

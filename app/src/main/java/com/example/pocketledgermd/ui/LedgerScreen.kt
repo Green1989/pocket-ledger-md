@@ -53,6 +53,7 @@ private fun DateFilter.displayLabel(): String = when (this) {
 @Composable
 fun LedgerScreen(vm: LedgerViewModel) {
     var editingEntry by remember { mutableStateOf<LedgerEntry?>(null) }
+    var deletingEntry by remember { mutableStateOf<LedgerEntry?>(null) }
 
     LazyColumn(
         modifier = Modifier
@@ -71,6 +72,7 @@ fun LedgerScreen(vm: LedgerViewModel) {
             EntryCard(
                 e = e,
                 onEdit = { editingEntry = it },
+                onDelete = { deletingEntry = it },
             )
         }
     }
@@ -81,6 +83,29 @@ fun LedgerScreen(vm: LedgerViewModel) {
             vm = vm,
             onDismiss = { editingEntry = null },
             onSaved = { editingEntry = null },
+        )
+    }
+
+    if (deletingEntry != null) {
+        AlertDialog(
+            onDismissRequest = { deletingEntry = null },
+            title = { Text("删除记录") },
+            text = { Text("确认删除这条记录？删除后不可恢复。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.deleteExistingEntry(deletingEntry!!)
+                        deletingEntry = null
+                    }
+                ) {
+                    Text("确认删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingEntry = null }) {
+                    Text("取消")
+                }
+            },
         )
     }
 }
@@ -410,7 +435,11 @@ private fun EditEntryDialog(
 }
 
 @Composable
-private fun EntryCard(e: LedgerEntry, onEdit: (LedgerEntry) -> Unit) {
+private fun EntryCard(
+    e: LedgerEntry,
+    onEdit: (LedgerEntry) -> Unit,
+    onDelete: (LedgerEntry) -> Unit,
+) {
     val dt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -427,8 +456,13 @@ private fun EntryCard(e: LedgerEntry, onEdit: (LedgerEntry) -> Unit) {
                     Text("备注: ${e.note}")
                 }
             }
-            OutlinedButton(onClick = { onEdit(e) }) {
-                Text("编辑")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { onEdit(e) }) {
+                    Text("编辑")
+                }
+                OutlinedButton(onClick = { onDelete(e) }) {
+                    Text("删除")
+                }
             }
         }
     }

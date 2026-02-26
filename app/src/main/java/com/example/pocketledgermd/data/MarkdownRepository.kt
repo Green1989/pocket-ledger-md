@@ -76,6 +76,12 @@ class MarkdownRepository(private val context: Context) {
         upsertEntry(newMonth, updatedWithId)
     }
 
+    fun deleteEntry(entry: LedgerEntry) {
+        val target = ensureEntryHasId(entry)
+        val month = YearMonth.from(target.dateTime)
+        removeEntry(month, target)
+    }
+
     private fun upsertEntry(month: YearMonth, entry: LedgerEntry) {
         val file = monthFile(month)
         val current = if (file.exists()) file.readText() else ""
