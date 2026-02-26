@@ -9,6 +9,7 @@ enum class EntryType {
 }
 
 data class LedgerEntry(
+    val id: String? = null,
     val dateTime: LocalDateTime,
     val type: EntryType,
     val amount: BigDecimal,

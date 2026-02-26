@@ -18,11 +18,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.example.pocketledgermd.data.EntryType
 import com.example.pocketledgermd.data.LedgerEntry
 import java.math.RoundingMode
+import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import androidx.compose.ui.text.input.KeyboardType
@@ -49,6 +52,8 @@ private fun DateFilter.displayLabel(): String = when (this) {
 
 @Composable
 fun LedgerScreen(vm: LedgerViewModel) {
+    var editingEntry by remember { mutableStateOf<LedgerEntry?>(null) }
+
     LazyColumn(
         modifier = Modifier
             .padding(12.dp),
@@ -63,8 +68,20 @@ fun LedgerScreen(vm: LedgerViewModel) {
         }
         items(1) { Text("记录", style = MaterialTheme.typography.titleMedium) }
         items(vm.entries) { e ->
-            EntryCard(e)
+            EntryCard(
+                e = e,
+                onEdit = { editingEntry = it },
+            )
         }
+    }
+
+    if (editingEntry != null) {
+        EditEntryDialog(
+            entry = editingEntry!!,
+            vm = vm,
+            onDismiss = { editingEntry = null },
+            onSaved = { editingEntry = null },
+        )
     }
 }
 
@@ -239,16 +256,179 @@ private fun EntryForm(vm: LedgerViewModel) {
     }
 }
 
+private fun sanitizeAmountInput(raw: String): String {
+    val filtered = raw.filter { it.isDigit() || it == '.' }
+    val normalized = if (filtered.startsWith(".")) "0$filtered" else filtered
+    val parts = normalized.split('.', limit = 3)
+    return when {
+        parts.size == 1 -> parts[0]
+        parts.size >= 2 -> "${parts[0]}.${parts[1].take(2)}"
+        else -> ""
+    }
+}
+
 @Composable
-private fun EntryCard(e: LedgerEntry) {
+private fun EditEntryDialog(
+    entry: LedgerEntry,
+    vm: LedgerViewModel,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    val context = LocalContext.current
+    var editDateTime by remember(entry) { mutableStateOf(entry.dateTime) }
+    var editType by remember(entry) { mutableStateOf(entry.type) }
+    var editAmount by remember(entry) { mutableStateOf(entry.amount.toPlainString()) }
+    var editNote by remember(entry) { mutableStateOf(entry.note) }
+    var categoryExpanded by remember { mutableStateOf(false) }
+    var editCategory by remember(entry) { mutableStateOf(entry.category) }
+
+    val categories = vm.categoriesForType(editType)
+    if (editCategory !in categories) {
+        editCategory = categories.first()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("修改记录") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("时间: ${editDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            DatePickerDialog(
+                                context,
+                                { _, year, month, dayOfMonth ->
+                                    editDateTime = LocalDateTime.of(
+                                        year,
+                                        month + 1,
+                                        dayOfMonth,
+                                        editDateTime.hour,
+                                        editDateTime.minute,
+                                    )
+                                    TimePickerDialog(
+                                        context,
+                                        { _, hour, minute ->
+                                            editDateTime = LocalDateTime.of(
+                                                editDateTime.year,
+                                                editDateTime.monthValue,
+                                                editDateTime.dayOfMonth,
+                                                hour,
+                                                minute,
+                                            )
+                                        },
+                                        editDateTime.hour,
+                                        editDateTime.minute,
+                                        true,
+                                    ).show()
+                                },
+                                editDateTime.year,
+                                editDateTime.monthValue - 1,
+                                editDateTime.dayOfMonth,
+                            ).apply {
+                                datePicker.maxDate = System.currentTimeMillis()
+                            }.show()
+                        }
+                    ) {
+                        Text("选择日期时间")
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row {
+                        RadioButton(
+                            selected = editType == EntryType.EXPENSE,
+                            onClick = { editType = EntryType.EXPENSE },
+                        )
+                        Text("支出", modifier = Modifier.padding(top = 12.dp))
+                    }
+                    Row {
+                        RadioButton(
+                            selected = editType == EntryType.INCOME,
+                            onClick = { editType = EntryType.INCOME },
+                        )
+                        Text("收入", modifier = Modifier.padding(top = 12.dp))
+                    }
+                }
+
+                OutlinedTextField(
+                    value = editAmount,
+                    onValueChange = { editAmount = sanitizeAmountInput(it) },
+                    label = { Text("金额") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                )
+
+                OutlinedButton(onClick = { categoryExpanded = true }) {
+                    Text("分类: $editCategory")
+                }
+                DropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
+                    categories.forEach { c ->
+                        DropdownMenuItem(
+                            text = { Text(c) },
+                            onClick = {
+                                editCategory = c
+                                categoryExpanded = false
+                            }
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = editNote,
+                    onValueChange = { editNote = it },
+                    label = { Text("备注(可选)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    vm.updateExistingEntry(
+                        original = entry,
+                        newDateTime = editDateTime,
+                        newType = editType,
+                        newAmountInput = editAmount,
+                        newCategory = editCategory,
+                        newNote = editNote,
+                    )
+                    onSaved()
+                }
+            ) {
+                Text("保存修改")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+    )
+}
+
+@Composable
+private fun EntryCard(e: LedgerEntry, onEdit: (LedgerEntry) -> Unit) {
     val dt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("${e.dateTime.format(dt)}  ${if (e.type == EntryType.EXPENSE) "支出" else "收入"}")
-            Text("金额: ${e.amount.setScale(2, RoundingMode.HALF_UP)}")
-            Text("分类: ${e.category}")
-            if (e.note.isNotBlank()) {
-                Text("备注: ${e.note}")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("${e.dateTime.format(dt)}  ${if (e.type == EntryType.EXPENSE) "支出" else "收入"}")
+                Text("金额: ${e.amount.setScale(2, RoundingMode.HALF_UP)}")
+                Text("分类: ${e.category}")
+                if (e.note.isNotBlank()) {
+                    Text("备注: ${e.note}")
+                }
+            }
+            OutlinedButton(onClick = { onEdit(e) }) {
+                Text("编辑")
             }
         }
     }

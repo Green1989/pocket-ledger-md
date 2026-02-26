@@ -21,16 +21,21 @@ object MarkdownCodec {
             EntryType.INCOME -> "income"
         }
         val amount = entry.amount.setScale(2, RoundingMode.HALF_UP).toPlainString()
-        return "- ${entry.dateTime.format(timeFormatter)} | $type | $amount | ${entry.category} | ${entry.note}"
+        val base = "- ${entry.dateTime.format(timeFormatter)} | $type | $amount | ${entry.category} | ${entry.note}"
+        return if (entry.id.isNullOrBlank()) base else "$base | id=${entry.id}"
     }
 
     fun parseEntryLine(day: LocalDate, line: String): LedgerEntry? {
         if (!line.startsWith("- ")) return null
 
         val payload = line.removePrefix("- ")
+        val idMarker = " | id="
+        val markerIndex = payload.lastIndexOf(idMarker)
+        val id = if (markerIndex >= 0) payload.substring(markerIndex + idMarker.length).trim() else null
+        val mainPayload = if (markerIndex >= 0) payload.substring(0, markerIndex) else payload
         // Split by pipe char so empty note lines are still parseable:
         // "- 09:30 | expense | 25.50 | 餐饮 |"
-        val parts = payload.split('|', limit = 5).map { it.trim() }
+        val parts = mainPayload.split('|', limit = 5).map { it.trim() }
         if (parts.size < 4) return null
 
         return try {
@@ -45,6 +50,7 @@ object MarkdownCodec {
             val note = if (parts.size >= 5) parts[4] else ""
 
             LedgerEntry(
+                id = id,
                 dateTime = LocalDateTime.of(day, time),
                 type = type,
                 amount = amount,

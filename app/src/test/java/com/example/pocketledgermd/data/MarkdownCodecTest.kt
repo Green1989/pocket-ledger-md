@@ -98,4 +98,22 @@ class MarkdownCodecTest {
         assertTrue(indexNew > 0)
         assertTrue(indexNew < indexNextDay)
     }
+
+    @Test
+    fun formatAndParse_shouldKeepId_whenIdExists() {
+        val entry = LedgerEntry(
+            id = "test-id-123",
+            dateTime = LocalDateTime.of(2026, 2, 26, 9, 30),
+            type = EntryType.EXPENSE,
+            amount = "25.50".toBigDecimal(),
+            category = "餐饮",
+            note = "早餐",
+        )
+
+        val line = MarkdownCodec.formatEntryLine(entry)
+        val parsed = MarkdownCodec.parseEntryLine(LocalDate.of(2026, 2, 26), line)
+
+        assertNotNull(parsed)
+        assertEquals("test-id-123", parsed!!.id)
+    }
 }

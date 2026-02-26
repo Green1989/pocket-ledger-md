@@ -32,6 +32,9 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     private val incomeCategories = listOf("工资", "奖金", "报销", "投资收益", "退款", "其他收入")
     val availableCategories: List<String>
         get() = if (selectedType == EntryType.EXPENSE) expenseCategories else incomeCategories
+    fun categoriesForType(type: EntryType): List<String> {
+        return if (type == EntryType.EXPENSE) expenseCategories else incomeCategories
+    }
 
     var amountInput by mutableStateOf("")
     var noteInput by mutableStateOf("")
@@ -171,6 +174,34 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         statusMessage = "已保存"
         selectedMonth = YearMonth.from(selectedDateTime)
         selectedFilter = DateFilter.MONTH
+        reloadSelectedMonth()
+    }
+
+    fun updateExistingEntry(
+        original: LedgerEntry,
+        newDateTime: LocalDateTime,
+        newType: EntryType,
+        newAmountInput: String,
+        newCategory: String,
+        newNote: String,
+    ) {
+        val amount = newAmountInput.toBigDecimalOrNull()
+        if (amount == null || amount <= BigDecimal.ZERO) {
+            statusMessage = "金额必须大于 0"
+            return
+        }
+
+        val updated = original.copy(
+            dateTime = newDateTime,
+            type = newType,
+            amount = amount,
+            category = newCategory,
+            note = newNote.trim(),
+        )
+
+        repository.updateEntry(original, updated)
+        statusMessage = "已更新"
+        selectedMonth = YearMonth.from(newDateTime)
         reloadSelectedMonth()
     }
 }
