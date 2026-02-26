@@ -4,6 +4,7 @@ import android.content.Context
 import java.io.File
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.Year
 import java.time.YearMonth
 
 class MarkdownRepository(private val context: Context) {
@@ -21,6 +22,25 @@ class MarkdownRepository(private val context: Context) {
 
     fun loadMonth(ym: YearMonth): List<LedgerEntry> {
         val file = monthFile(ym)
+        if (!file.exists()) return emptyList()
+
+        return parseMonthFile(file)
+    }
+
+    fun loadYear(year: Year): List<LedgerEntry> {
+        return listMonthFiles()
+            .filter { it.name.startsWith("${year.value}-") }
+            .flatMap { parseMonthFile(it) }
+            .sortedByDescending { it.dateTime }
+    }
+
+    fun loadAll(): List<LedgerEntry> {
+        return listMonthFiles()
+            .flatMap { parseMonthFile(it) }
+            .sortedByDescending { it.dateTime }
+    }
+
+    private fun parseMonthFile(file: File): List<LedgerEntry> {
         if (!file.exists()) return emptyList()
 
         var currentDay: LocalDate? = null
@@ -42,6 +62,14 @@ class MarkdownRepository(private val context: Context) {
         }
 
         return result.sortedByDescending { it.dateTime }
+    }
+
+    private fun listMonthFiles(): List<File> {
+        val pattern = Regex("""^\d{4}-\d{2}\.md$""")
+        return ledgerDir
+            .listFiles()
+            ?.filter { it.isFile && pattern.matches(it.name) }
+            ?: emptyList()
     }
 
     fun summarize(entries: List<LedgerEntry>): MonthSummary {

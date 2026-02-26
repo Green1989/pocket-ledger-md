@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -35,9 +37,11 @@ import java.time.format.DateTimeFormatter
 import androidx.compose.ui.text.input.KeyboardType
 
 private fun DateFilter.displayLabel(): String = when (this) {
-    DateFilter.MONTH -> "本月"
-    DateFilter.WEEK -> "本周"
     DateFilter.TODAY -> "今天"
+    DateFilter.WEEK -> "本周"
+    DateFilter.MONTH -> "本月"
+    DateFilter.YEAR -> "今年"
+    DateFilter.ALL -> "全部"
 }
 
 @Composable
@@ -101,15 +105,26 @@ private fun MonthNavigator(vm: LedgerViewModel) {
 @Composable
 private fun FilterBar(vm: LedgerViewModel) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(12.dp)) {
-            listOf(DateFilter.MONTH, DateFilter.WEEK, DateFilter.TODAY).forEachIndexed { index, filter ->
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .horizontalScroll(rememberScrollState())
+        ) {
+            val filters = listOf(
+                DateFilter.TODAY,
+                DateFilter.WEEK,
+                DateFilter.MONTH,
+                DateFilter.YEAR,
+                DateFilter.ALL,
+            )
+            filters.forEachIndexed { index, filter ->
                 OutlinedButton(
                     onClick = { vm.updateFilter(filter) },
                     enabled = vm.selectedFilter != filter,
                 ) {
                     Text(filter.displayLabel())
                 }
-                if (index != 2) {
+                if (index != filters.lastIndex) {
                     Spacer(modifier = Modifier.width(8.dp))
                 }
             }

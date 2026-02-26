@@ -13,12 +13,15 @@ import com.example.pocketledgermd.data.MonthSummary
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.Year
 import java.time.YearMonth
 
 enum class DateFilter {
-    MONTH,
-    WEEK,
     TODAY,
+    WEEK,
+    MONTH,
+    YEAR,
+    ALL,
 }
 
 class LedgerViewModel(app: Application) : AndroidViewModel(app) {
@@ -56,7 +59,9 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         val data = repository.loadMonth(selectedMonth)
         monthEntries.clear()
         monthEntries.addAll(data)
-        applyFilter()
+        entries.clear()
+        entries.addAll(data)
+        refreshSummary()
     }
 
     fun previousMonth() {
@@ -71,7 +76,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateFilter(filter: DateFilter) {
         selectedFilter = filter
-        applyFilter()
+        refreshSummary()
     }
 
     fun updateEntryType(type: EntryType) {
@@ -101,22 +106,27 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         amountInput = sanitized
     }
 
-    private fun applyFilter() {
+    private fun refreshSummary() {
         val today = LocalDate.now()
         val weekStart = today.minusDays((today.dayOfWeek.value - 1).toLong())
         val weekEnd = weekStart.plusDays(6)
 
-        val filtered = monthEntries.filter { entry ->
-            val day = entry.dateTime.toLocalDate()
-            when (selectedFilter) {
-                DateFilter.MONTH -> true
-                DateFilter.WEEK -> !day.isBefore(weekStart) && !day.isAfter(weekEnd)
-                DateFilter.TODAY -> day == today
-            }
+        val baseEntries = when (selectedFilter) {
+            DateFilter.MONTH -> monthEntries.toList()
+            DateFilter.YEAR -> repository.loadYear(Year.now())
+            DateFilter.ALL -> repository.loadAll()
+            DateFilter.TODAY, DateFilter.WEEK -> repository.loadAll()
         }
 
-        entries.clear()
-        entries.addAll(filtered)
+        val filtered = when (selectedFilter) {
+            DateFilter.TODAY -> baseEntries.filter { it.dateTime.toLocalDate() == today }
+            DateFilter.WEEK -> baseEntries.filter {
+                val day = it.dateTime.toLocalDate()
+                !day.isBefore(weekStart) && !day.isAfter(weekEnd)
+            }
+            DateFilter.MONTH, DateFilter.YEAR, DateFilter.ALL -> baseEntries
+        }
+
         summary = repository.summarize(filtered)
     }
 
