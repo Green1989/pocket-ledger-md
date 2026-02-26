@@ -13,6 +13,7 @@ import com.example.pocketledgermd.data.MonthSummary
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.Year
 import java.time.YearMonth
 
@@ -37,6 +38,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     var selectedType by mutableStateOf(EntryType.EXPENSE)
     var selectedCategory by mutableStateOf(expenseCategories.first())
     var statusMessage by mutableStateOf("")
+    var selectedDateTime by mutableStateOf(LocalDateTime.now())
     var selectedMonth by mutableStateOf(YearMonth.now())
     var selectedFilter by mutableStateOf(DateFilter.MONTH)
 
@@ -84,6 +86,24 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         if (selectedCategory !in availableCategories) {
             selectedCategory = availableCategories.first()
         }
+    }
+
+    fun setEntryDateTimeToNow() {
+        selectedDateTime = LocalDateTime.now()
+    }
+
+    fun updateEntryDate(year: Int, month: Int, day: Int) {
+        selectedDateTime = LocalDateTime.of(
+            LocalDate.of(year, month, day),
+            selectedDateTime.toLocalTime(),
+        )
+    }
+
+    fun updateEntryTime(hour: Int, minute: Int) {
+        selectedDateTime = LocalDateTime.of(
+            selectedDateTime.toLocalDate(),
+            LocalTime.of(hour, minute),
+        )
     }
 
     fun updateAmountInput(raw: String) {
@@ -138,7 +158,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val entry = LedgerEntry(
-            dateTime = LocalDateTime.now(),
+            dateTime = selectedDateTime,
             type = selectedType,
             amount = amount,
             category = selectedCategory,
@@ -149,7 +169,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         amountInput = ""
         noteInput = ""
         statusMessage = "已保存"
-        selectedMonth = YearMonth.now()
+        selectedMonth = YearMonth.from(selectedDateTime)
         selectedFilter = DateFilter.MONTH
         reloadSelectedMonth()
     }

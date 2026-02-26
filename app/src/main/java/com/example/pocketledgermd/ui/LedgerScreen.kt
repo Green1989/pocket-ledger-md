@@ -1,5 +1,7 @@
 package com.example.pocketledgermd.ui
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.pocketledgermd.data.EntryType
@@ -135,6 +138,8 @@ private fun FilterBar(vm: LedgerViewModel) {
 @Composable
 private fun EntryForm(vm: LedgerViewModel) {
     var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val dateTimeText = vm.selectedDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -165,6 +170,41 @@ private fun EntryForm(vm: LedgerViewModel) {
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             )
+
+            Text("记账时间: $dateTimeText")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { vm.setEntryDateTimeToNow() }) {
+                    Text("今天/现在")
+                }
+                OutlinedButton(
+                    onClick = {
+                        val current = vm.selectedDateTime
+                        DatePickerDialog(
+                            context,
+                            { _, year, month, dayOfMonth ->
+                                vm.updateEntryDate(year, month + 1, dayOfMonth)
+                                val afterDate = vm.selectedDateTime
+                                TimePickerDialog(
+                                    context,
+                                    { _, hour, minute ->
+                                        vm.updateEntryTime(hour, minute)
+                                    },
+                                    afterDate.hour,
+                                    afterDate.minute,
+                                    true,
+                                ).show()
+                            },
+                            current.year,
+                            current.monthValue - 1,
+                            current.dayOfMonth,
+                        ).apply {
+                            datePicker.maxDate = System.currentTimeMillis()
+                        }.show()
+                    }
+                ) {
+                    Text("选择日期时间")
+                }
+            }
 
             OutlinedButton(onClick = { expanded = true }) {
                 Text("分类: ${vm.selectedCategory}")
