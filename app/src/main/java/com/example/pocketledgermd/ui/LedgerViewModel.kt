@@ -50,6 +50,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     var selectedDateTime by mutableStateOf(LocalDateTime.now())
     var selectedMonth by mutableStateOf(YearMonth.now())
     var selectedFilter by mutableStateOf(DateFilter.MONTH)
+    private var noteEditedManually = false
 
     private val monthEntries = mutableStateListOf<LedgerEntry>()
     val entries = mutableStateListOf<LedgerEntry>()
@@ -95,10 +96,22 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         if (selectedCategory !in availableCategories) {
             selectedCategory = availableCategories.first()
         }
+        applyAutoMealNoteIfNeeded()
+    }
+
+    fun updateEntryCategory(category: String) {
+        selectedCategory = category
+        applyAutoMealNoteIfNeeded()
+    }
+
+    fun updateNoteInput(note: String) {
+        noteInput = note
+        noteEditedManually = true
     }
 
     fun setEntryDateTimeToNow() {
         selectedDateTime = LocalDateTime.now()
+        applyAutoMealNoteIfNeeded()
     }
 
     fun updateEntryDate(year: Int, month: Int, day: Int) {
@@ -106,6 +119,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             LocalDate.of(year, month, day),
             selectedDateTime.toLocalTime(),
         )
+        applyAutoMealNoteIfNeeded()
     }
 
     fun updateEntryTime(hour: Int, minute: Int) {
@@ -113,6 +127,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             selectedDateTime.toLocalDate(),
             LocalTime.of(hour, minute),
         )
+        applyAutoMealNoteIfNeeded()
     }
 
     fun updateAmountInput(raw: String) {
@@ -177,6 +192,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         repository.saveEntry(entry)
         amountInput = ""
         noteInput = ""
+        noteEditedManually = false
         statusMessage = "已保存"
         selectedMonth = YearMonth.from(selectedDateTime)
         selectedFilter = DateFilter.MONTH
@@ -288,6 +304,25 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 result.message
             }
             reloadSelectedMonth()
+        }
+    }
+
+    private fun applyAutoMealNoteIfNeeded() {
+        if (selectedType != EntryType.EXPENSE) return
+        if (selectedCategory != "餐饮") return
+        if (noteEditedManually) return
+
+        val hour = selectedDateTime.hour
+        val autoNote = when (hour) {
+            in 6..10 -> "早餐"
+            in 11..12 -> "午餐"
+            in 13..15 -> "下午茶"
+            in 16..20 -> "晚餐"
+            in 21..23 -> "宵夜"
+            else -> null
+        }
+        if (autoNote != null) {
+            noteInput = autoNote
         }
     }
 }

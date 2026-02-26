@@ -91,7 +91,6 @@ fun LedgerScreen(vm: LedgerViewModel) {
     ) {
         items(1) { SummaryCard(vm) }
         items(1) { EntryForm(vm) }
-        items(1) { MonthNavigator(vm) }
         items(1) { FilterBar(vm) }
         items(1) {
             BackupRestoreBar(
@@ -99,6 +98,7 @@ fun LedgerScreen(vm: LedgerViewModel) {
                 onRestore = { restoreLauncher.launch(null) },
             )
         }
+        items(1) { MonthNavigator(vm) }
         if (vm.statusMessage.isNotBlank()) {
             items(1) { Text(vm.statusMessage, color = MaterialTheme.colorScheme.primary) }
         }
@@ -345,7 +345,7 @@ private fun EntryForm(vm: LedgerViewModel) {
                     DropdownMenuItem(
                         text = { Text(c) },
                         onClick = {
-                            vm.selectedCategory = c
+                            vm.updateEntryCategory(c)
                             expanded = false
                         }
                     )
@@ -354,7 +354,7 @@ private fun EntryForm(vm: LedgerViewModel) {
 
             OutlinedTextField(
                 value = vm.noteInput,
-                onValueChange = { vm.noteInput = it },
+                onValueChange = { vm.updateNoteInput(it) },
                 label = { Text("备注(可选)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
