@@ -1,0 +1,30 @@
+# Gradle / build outputs
+.gradle/
+build/
+**/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+local.properties
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Keystore / signing
+*.jks
+*.keystore
+*.p12
+
+# NDK / CMake (if added later)
+.cxx/
+externalNativeBuild/
+
+# Kotlin/Java temp caches
+.kotlin/
+captures/
+
