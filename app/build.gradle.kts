@@ -45,6 +45,13 @@ android {
     }
 }
 
+android.applicationVariants.all {
+    outputs.all {
+        @Suppress("UNCHECKED_CAST")
+        (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName = "pocket-ledger.apk"
+    }
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.09.02")
 
