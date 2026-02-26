@@ -34,8 +34,10 @@ import androidx.compose.runtime.setValue
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.example.pocketledgermd.data.EntryType
 import com.example.pocketledgermd.data.LedgerEntry
@@ -256,6 +258,7 @@ private fun FilterBar(vm: LedgerViewModel) {
 private fun EntryForm(vm: LedgerViewModel) {
     var expanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val dateTimeText = vm.selectedDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -323,8 +326,19 @@ private fun EntryForm(vm: LedgerViewModel) {
                 }
             }
 
-            OutlinedButton(onClick = { expanded = true }) {
-                Text("分类: ${vm.selectedCategory}")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { expanded = true }) {
+                    Text("分类: ${vm.selectedCategory}")
+                }
+                OutlinedButton(
+                    onClick = {
+                        val shareText = vm.buildTodayShareText()
+                        clipboardManager.setText(AnnotatedString(shareText))
+                        vm.statusMessage = "已复制当天记账内容"
+                    }
+                ) {
+                    Text("当天记账")
+                }
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 vm.availableCategories.forEach { c ->

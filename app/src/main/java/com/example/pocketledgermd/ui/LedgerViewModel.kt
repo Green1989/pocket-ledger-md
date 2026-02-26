@@ -21,6 +21,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.Year
 import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 
 enum class DateFilter {
     TODAY,
@@ -215,6 +216,52 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         statusMessage = "已删除"
         selectedMonth = YearMonth.from(entry.dateTime)
         reloadSelectedMonth()
+    }
+
+    fun buildTodayShareText(): String {
+        val targetDate = selectedDateTime.toLocalDate()
+        val todayEntries = repository.loadAll()
+            .filter { it.dateTime.toLocalDate() == targetDate }
+            .sortedBy { it.dateTime }
+
+        val dateText = targetDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+        if (todayEntries.isEmpty()) {
+            return """
+【$dateText 记账汇总】
+今日无记账记录
+            """.trimIndent()
+        }
+
+        val summary = repository.summarize(todayEntries)
+        val expenseEntries = todayEntries.filter { it.type == EntryType.EXPENSE }
+        val incomeEntries = todayEntries.filter { it.type == EntryType.INCOME }
+        val lineFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+        val builder = StringBuilder()
+        builder.appendLine("【$dateText 记账汇总】")
+        builder.appendLine("收入：${summary.totalIncome}")
+        builder.appendLine("支出：${summary.totalExpense}")
+        builder.appendLine("结余：${summary.balance}")
+
+        if (expenseEntries.isNotEmpty()) {
+            builder.appendLine()
+            builder.appendLine("支出明细：")
+            expenseEntries.forEach { entry ->
+                val note = if (entry.note.isBlank()) "" else " ${entry.note}"
+                builder.appendLine("${entry.dateTime.format(lineFormatter)} ${entry.category} ${entry.amount}$note")
+            }
+        }
+
+        if (incomeEntries.isNotEmpty()) {
+            builder.appendLine()
+            builder.appendLine("收入明细：")
+            incomeEntries.forEach { entry ->
+                val note = if (entry.note.isBlank()) "" else " ${entry.note}"
+                builder.appendLine("${entry.dateTime.format(lineFormatter)} ${entry.category} ${entry.amount}$note")
+            }
+        }
+
+        return builder.toString().trimEnd()
     }
 
     fun backupLedgerToDirectory(treeUri: Uri) {
