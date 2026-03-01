@@ -11,7 +11,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.pocketledgermd.data.EntryType
 import com.example.pocketledgermd.data.LedgerEntry
 import com.example.pocketledgermd.data.MarkdownRepository
+import com.example.pocketledgermd.data.MemberGroup
 import com.example.pocketledgermd.data.MonthSummary
+import com.example.pocketledgermd.data.ShareSyncCodec
+import com.example.pocketledgermd.data.SyncParseResult
+import com.example.pocketledgermd.data.displayCategoryText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,8 +37,15 @@ enum class DateFilter {
 
 class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = MarkdownRepository(app.applicationContext)
+    val memberGroups = listOf(
+        MemberGroup.XIAOXIN,
+        MemberGroup.JIELI,
+        MemberGroup.TONGTONG,
+        MemberGroup.ELDER,
+        MemberGroup.ALL,
+    )
 
-    private val expenseCategories = listOf("餐饮", "交通", "购物", "日用", "娱乐", "医疗", "住房", "其他支出")
+    private val expenseCategories = listOf("餐饮", "交通", "购物", "日用", "娱乐", "医疗", "教育", "住房", "其他支出")
     private val incomeCategories = listOf("工资", "奖金", "报销", "投资收益", "退款", "其他收入")
     val availableCategories: List<String>
         get() = if (selectedType == EntryType.EXPENSE) expenseCategories else incomeCategories
@@ -45,6 +56,8 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     var amountInput by mutableStateOf("")
     var noteInput by mutableStateOf("")
     var selectedType by mutableStateOf(EntryType.EXPENSE)
+    var selectedMember by mutableStateOf(MemberGroup.ALL)
+    var selectedMemberFilter by mutableStateOf(MemberGroup.ALL)
     var selectedCategory by mutableStateOf(expenseCategories.first())
     var statusMessage by mutableStateOf("")
     var selectedDateTime by mutableStateOf(LocalDateTime.now())
@@ -71,8 +84,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         val data = repository.loadMonth(selectedMonth)
         monthEntries.clear()
         monthEntries.addAll(data)
-        entries.clear()
-        entries.addAll(data)
+        refreshVisibleEntries()
         refreshSummary()
     }
 
@@ -91,6 +103,12 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         refreshSummary()
     }
 
+    fun updateMemberFilter(member: MemberGroup) {
+        selectedMemberFilter = member
+        refreshVisibleEntries()
+        refreshSummary()
+    }
+
     fun updateEntryType(type: EntryType) {
         selectedType = type
         if (selectedCategory !in availableCategories) {
@@ -102,6 +120,10 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     fun updateEntryCategory(category: String) {
         selectedCategory = category
         applyAutoMealNoteIfNeeded()
+    }
+
+    fun updateEntryMember(member: MemberGroup) {
+        selectedMember = member
     }
 
     fun updateNoteInput(note: String) {
@@ -150,6 +172,18 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         amountInput = sanitized
     }
 
+    private fun refreshVisibleEntries() {
+        val filtered = monthEntries.filter { matchesMemberFilter(it) }
+        entries.clear()
+        entries.addAll(filtered)
+    }
+
+    private fun matchesMemberFilter(entry: LedgerEntry): Boolean {
+        return selectedMemberFilter == MemberGroup.ALL ||
+            entry.member == selectedMemberFilter ||
+            entry.member == MemberGroup.ALL
+    }
+
     private fun refreshSummary() {
         val today = LocalDate.now()
         val weekStart = today.minusDays((today.dayOfWeek.value - 1).toLong())
@@ -161,14 +195,15 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             DateFilter.ALL -> repository.loadAll()
             DateFilter.TODAY, DateFilter.WEEK -> repository.loadAll()
         }
+        val memberFiltered = baseEntries.filter { matchesMemberFilter(it) }
 
         val filtered = when (selectedFilter) {
-            DateFilter.TODAY -> baseEntries.filter { it.dateTime.toLocalDate() == today }
-            DateFilter.WEEK -> baseEntries.filter {
+            DateFilter.TODAY -> memberFiltered.filter { it.dateTime.toLocalDate() == today }
+            DateFilter.WEEK -> memberFiltered.filter {
                 val day = it.dateTime.toLocalDate()
                 !day.isBefore(weekStart) && !day.isAfter(weekEnd)
             }
-            DateFilter.MONTH, DateFilter.YEAR, DateFilter.ALL -> baseEntries
+            DateFilter.MONTH, DateFilter.YEAR, DateFilter.ALL -> memberFiltered
         }
 
         summary = repository.summarize(filtered)
@@ -185,6 +220,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             dateTime = selectedDateTime,
             type = selectedType,
             amount = amount,
+            member = selectedMember,
             category = selectedCategory,
             note = noteInput.trim(),
         )
@@ -204,6 +240,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         newDateTime: LocalDateTime,
         newType: EntryType,
         newAmountInput: String,
+        newMember: MemberGroup,
         newCategory: String,
         newNote: String,
     ) {
@@ -217,6 +254,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             dateTime = newDateTime,
             type = newType,
             amount = amount,
+            member = newMember,
             category = newCategory,
             note = newNote.trim(),
         )
@@ -238,46 +276,67 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         val targetDate = selectedDateTime.toLocalDate()
         val todayEntries = repository.loadAll()
             .filter { it.dateTime.toLocalDate() == targetDate }
+            .filter { matchesMemberFilter(it) }
             .sortedBy { it.dateTime }
 
         val dateText = targetDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-        if (todayEntries.isEmpty()) {
-            return """
+        val readableText = if (todayEntries.isEmpty()) {
+            """
 【$dateText 记账汇总】
 今日无记账记录
             """.trimIndent()
+        } else {
+            val summary = repository.summarize(todayEntries)
+            val expenseEntries = todayEntries.filter { it.type == EntryType.EXPENSE }
+            val incomeEntries = todayEntries.filter { it.type == EntryType.INCOME }
+            val lineFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+            val builder = StringBuilder()
+            builder.appendLine("【$dateText 记账汇总】")
+            builder.appendLine("收入：${summary.totalIncome}")
+            builder.appendLine("支出：${summary.totalExpense}")
+            builder.appendLine("结余：${summary.balance}")
+
+            if (expenseEntries.isNotEmpty()) {
+                builder.appendLine()
+                builder.appendLine("支出明细：")
+                expenseEntries.forEach { entry ->
+                    val note = if (entry.note.isBlank()) "" else " ${entry.note}"
+                    builder.appendLine("${entry.dateTime.format(lineFormatter)} ${entry.displayCategoryText()} ${entry.amount}$note")
+                }
+            }
+
+            if (incomeEntries.isNotEmpty()) {
+                builder.appendLine()
+                builder.appendLine("收入明细：")
+                incomeEntries.forEach { entry ->
+                    val note = if (entry.note.isBlank()) "" else " ${entry.note}"
+                    builder.appendLine("${entry.dateTime.format(lineFormatter)} ${entry.displayCategoryText()} ${entry.amount}$note")
+                }
+            }
+
+            builder.toString().trimEnd()
         }
 
-        val summary = repository.summarize(todayEntries)
-        val expenseEntries = todayEntries.filter { it.type == EntryType.EXPENSE }
-        val incomeEntries = todayEntries.filter { it.type == EntryType.INCOME }
-        val lineFormatter = DateTimeFormatter.ofPattern("HH:mm")
+        return ShareSyncCodec.appendSyncBlock(readableText, targetDate, todayEntries)
+    }
 
-        val builder = StringBuilder()
-        builder.appendLine("【$dateText 记账汇总】")
-        builder.appendLine("收入：${summary.totalIncome}")
-        builder.appendLine("支出：${summary.totalExpense}")
-        builder.appendLine("结余：${summary.balance}")
+    fun syncFromClipboardText(rawText: String) {
+        when (val parsed = ShareSyncCodec.parse(rawText)) {
+            is SyncParseResult.NotFound -> {
+                statusMessage = "未检测到可同步记账内容"
+            }
 
-        if (expenseEntries.isNotEmpty()) {
-            builder.appendLine()
-            builder.appendLine("支出明细：")
-            expenseEntries.forEach { entry ->
-                val note = if (entry.note.isBlank()) "" else " ${entry.note}"
-                builder.appendLine("${entry.dateTime.format(lineFormatter)} ${entry.category} ${entry.amount}$note")
+            is SyncParseResult.Invalid -> {
+                statusMessage = "同步失败：${parsed.message}"
+            }
+
+            is SyncParseResult.Success -> {
+                val result = repository.importEntries(parsed.payload.entries)
+                statusMessage = "${result.message}: 新增 ${result.importedCount} 条，跳过 ${result.skippedCount} 条"
+                reloadSelectedMonth()
             }
         }
-
-        if (incomeEntries.isNotEmpty()) {
-            builder.appendLine()
-            builder.appendLine("收入明细：")
-            incomeEntries.forEach { entry ->
-                val note = if (entry.note.isBlank()) "" else " ${entry.note}"
-                builder.appendLine("${entry.dateTime.format(lineFormatter)} ${entry.category} ${entry.amount}$note")
-            }
-        }
-
-        return builder.toString().trimEnd()
     }
 
     fun backupLedgerToDirectory(treeUri: Uri) {

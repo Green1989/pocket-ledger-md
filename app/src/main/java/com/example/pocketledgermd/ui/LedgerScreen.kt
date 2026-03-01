@@ -41,6 +41,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.example.pocketledgermd.data.EntryType
 import com.example.pocketledgermd.data.LedgerEntry
+import com.example.pocketledgermd.data.MemberGroup
+import com.example.pocketledgermd.data.displayCategoryText
 import java.math.RoundingMode
 import java.time.LocalDateTime
 import java.time.YearMonth
@@ -92,6 +94,7 @@ fun LedgerScreen(vm: LedgerViewModel) {
         items(1) { SummaryCard(vm) }
         items(1) { EntryForm(vm) }
         items(1) { FilterBar(vm) }
+        items(1) { MemberFilterBar(vm) }
         items(1) {
             BackupRestoreBar(
                 onBackup = { backupLauncher.launch(null) },
@@ -255,8 +258,32 @@ private fun FilterBar(vm: LedgerViewModel) {
 }
 
 @Composable
+private fun MemberFilterBar(vm: LedgerViewModel) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .horizontalScroll(rememberScrollState())
+        ) {
+            vm.memberGroups.forEachIndexed { index, member ->
+                OutlinedButton(
+                    onClick = { vm.updateMemberFilter(member) },
+                    enabled = vm.selectedMemberFilter != member,
+                ) {
+                    Text(member.label)
+                }
+                if (index != vm.memberGroups.lastIndex) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun EntryForm(vm: LedgerViewModel) {
     var expanded by remember { mutableStateOf(false) }
+    var memberExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val dateTimeText = vm.selectedDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
@@ -292,7 +319,10 @@ private fun EntryForm(vm: LedgerViewModel) {
             )
 
             Text("记账时间: $dateTimeText")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedButton(onClick = { vm.setEntryDateTimeToNow() }) {
                     Text("今天/现在")
                 }
@@ -324,9 +354,23 @@ private fun EntryForm(vm: LedgerViewModel) {
                 ) {
                     Text("选择日期时间")
                 }
+                OutlinedButton(
+                    onClick = {
+                        val clipboardText = clipboardManager.getText()?.text?.toString().orEmpty()
+                        vm.syncFromClipboardText(clipboardText)
+                    }
+                ) {
+                    Text("同步")
+                }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(onClick = { memberExpanded = true }) {
+                    Text("对象: ${vm.selectedMember.label}")
+                }
                 OutlinedButton(onClick = { expanded = true }) {
                     Text("分类: ${vm.selectedCategory}")
                 }
@@ -337,7 +381,18 @@ private fun EntryForm(vm: LedgerViewModel) {
                         vm.statusMessage = "已复制当天记账内容"
                     }
                 ) {
-                    Text("当天记账")
+                    Text("分享")
+                }
+            }
+            DropdownMenu(expanded = memberExpanded, onDismissRequest = { memberExpanded = false }) {
+                vm.memberGroups.forEach { member ->
+                    DropdownMenuItem(
+                        text = { Text(member.label) },
+                        onClick = {
+                            vm.updateEntryMember(member)
+                            memberExpanded = false
+                        }
+                    )
                 }
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -394,6 +449,8 @@ private fun EditEntryDialog(
     var editAmount by remember(entry) { mutableStateOf(entry.amount.toPlainString()) }
     var editNote by remember(entry) { mutableStateOf(entry.note) }
     var categoryExpanded by remember { mutableStateOf(false) }
+    var memberExpanded by remember { mutableStateOf(false) }
+    var editMember by remember(entry) { mutableStateOf(entry.member) }
     var editCategory by remember(entry) { mutableStateOf(entry.category) }
 
     val categories = vm.categoriesForType(editType)
@@ -474,6 +531,21 @@ private fun EditEntryDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 )
 
+                OutlinedButton(onClick = { memberExpanded = true }) {
+                    Text("对象: ${editMember.label}")
+                }
+                DropdownMenu(expanded = memberExpanded, onDismissRequest = { memberExpanded = false }) {
+                    vm.memberGroups.forEach { member ->
+                        DropdownMenuItem(
+                            text = { Text(member.label) },
+                            onClick = {
+                                editMember = member
+                                memberExpanded = false
+                            }
+                        )
+                    }
+                }
+
                 OutlinedButton(onClick = { categoryExpanded = true }) {
                     Text("分类: $editCategory")
                 }
@@ -506,6 +578,7 @@ private fun EditEntryDialog(
                         newDateTime = editDateTime,
                         newType = editType,
                         newAmountInput = editAmount,
+                        newMember = editMember,
                         newCategory = editCategory,
                         newNote = editNote,
                     )
@@ -540,7 +613,7 @@ private fun EntryCard(
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("${e.dateTime.format(dt)}  ${if (e.type == EntryType.EXPENSE) "支出" else "收入"}")
                 Text("金额: ${e.amount.setScale(2, RoundingMode.HALF_UP)}")
-                Text("分类: ${e.category}")
+                Text("分类: ${e.displayCategoryText()}")
                 if (e.note.isNotBlank()) {
                     Text("备注: ${e.note}")
                 }

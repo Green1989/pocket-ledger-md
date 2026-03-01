@@ -21,6 +21,13 @@ data class FileTransferResult(
     val skippedFiles: Int = 0,
 )
 
+data class SyncImportResult(
+    val success: Boolean,
+    val message: String,
+    val importedCount: Int = 0,
+    val skippedCount: Int = 0,
+)
+
 class MarkdownRepository(private val context: Context) {
     private val ledgerDir: File by lazy {
         File(context.filesDir, "ledger").apply { mkdirs() }
@@ -60,7 +67,8 @@ class MarkdownRepository(private val context: Context) {
                     currentDay = runCatching { LocalDate.parse(line.removePrefix("## ").trim()) }.getOrNull()
                 }
                 line.startsWith("- ") && currentDay != null -> {
-                    val parsed = MarkdownCodec.parseEntryLine(currentDay!!, line) ?: continue
+                    val day = currentDay
+                    val parsed = MarkdownCodec.parseEntryLine(day, line) ?: continue
                     if (parsed.id == null && sameEntryContent(parsed, entry)) {
                         matchedIndex = i
                         break
@@ -119,7 +127,8 @@ class MarkdownRepository(private val context: Context) {
                     currentDay = runCatching { LocalDate.parse(line.removePrefix("## ").trim()) }.getOrNull()
                 }
                 line.startsWith("- ") && currentDay != null -> {
-                    val parsed = MarkdownCodec.parseEntryLine(currentDay!!, line) ?: continue
+                    val day = currentDay
+                    val parsed = MarkdownCodec.parseEntryLine(day, line) ?: continue
                     val idMatched = !entry.id.isNullOrBlank() && parsed.id == entry.id
                     val legacyMatched = entry.id.isNullOrBlank() && sameEntryContent(parsed, entry)
                     if (idMatched || legacyMatched) {
@@ -139,6 +148,7 @@ class MarkdownRepository(private val context: Context) {
         return a.dateTime == b.dateTime &&
             a.type == b.type &&
             a.amount.compareTo(b.amount) == 0 &&
+            a.member == b.member &&
             a.category == b.category &&
             a.note == b.note
     }
@@ -205,6 +215,42 @@ class MarkdownRepository(private val context: Context) {
             totalIncome = income,
             totalExpense = expense,
             balance = income - expense,
+        )
+    }
+
+    fun importEntries(entries: List<LedgerEntry>): SyncImportResult {
+        if (entries.isEmpty()) {
+            return SyncImportResult(
+                success = true,
+                message = "同步完成",
+                importedCount = 0,
+                skippedCount = 0,
+            )
+        }
+
+        val existingIds = loadAll()
+            .mapNotNull { it.id }
+            .toMutableSet()
+
+        var imported = 0
+        var skipped = 0
+
+        entries.sortedBy { it.dateTime }.forEach { raw ->
+            val id = raw.id?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+            if (id in existingIds) {
+                skipped++
+                return@forEach
+            }
+            saveEntry(raw.copy(id = id))
+            existingIds.add(id)
+            imported++
+        }
+
+        return SyncImportResult(
+            success = true,
+            message = "同步完成",
+            importedCount = imported,
+            skippedCount = skipped,
         )
     }
 

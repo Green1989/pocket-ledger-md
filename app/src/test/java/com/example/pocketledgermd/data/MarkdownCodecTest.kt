@@ -116,4 +116,24 @@ class MarkdownCodecTest {
         assertNotNull(parsed)
         assertEquals("test-id-123", parsed!!.id)
     }
+
+    @Test
+    fun formatAndParse_shouldKeepMember_whenMemberExists() {
+        val entry = LedgerEntry(
+            id = "test-id-456",
+            dateTime = LocalDateTime.of(2026, 2, 26, 9, 30),
+            type = EntryType.EXPENSE,
+            amount = "25.50".toBigDecimal(),
+            member = MemberGroup.JIELI,
+            category = "餐饮",
+            note = "早餐",
+        )
+
+        val line = MarkdownCodec.formatEntryLine(entry)
+        val parsed = MarkdownCodec.parseEntryLine(LocalDate.of(2026, 2, 26), line)
+
+        assertNotNull(parsed)
+        assertEquals(MemberGroup.JIELI, parsed!!.member)
+        assertEquals("test-id-456", parsed.id)
+    }
 }
