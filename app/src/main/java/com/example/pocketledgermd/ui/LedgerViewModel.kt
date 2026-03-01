@@ -1,6 +1,7 @@
 package com.example.pocketledgermd.ui
 
 import android.app.Application
+import android.content.Context
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -19,6 +20,7 @@ import com.example.pocketledgermd.data.displayCategoryText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -37,6 +39,7 @@ enum class DateFilter {
 
 class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = MarkdownRepository(app.applicationContext)
+    private val preferences = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val memberGroups = listOf(
         MemberGroup.XIAOXIN,
         MemberGroup.JIELI,
@@ -47,16 +50,18 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val expenseCategories = listOf("餐饮", "交通", "购物", "日用", "娱乐", "医疗", "教育", "住房", "其他支出")
     private val incomeCategories = listOf("工资", "奖金", "报销", "投资收益", "退款", "其他收入")
+    private val customExpenseCategories = mutableStateListOf<String>()
+    private val customIncomeCategories = mutableStateListOf<String>()
     val availableCategories: List<String>
-        get() = if (selectedType == EntryType.EXPENSE) expenseCategories else incomeCategories
+        get() = allCategoriesForType(selectedType)
     fun categoriesForType(type: EntryType): List<String> {
-        return if (type == EntryType.EXPENSE) expenseCategories else incomeCategories
+        return allCategoriesForType(type)
     }
 
     var amountInput by mutableStateOf("")
     var noteInput by mutableStateOf("")
     var selectedType by mutableStateOf(EntryType.EXPENSE)
-    var selectedMember by mutableStateOf(MemberGroup.ALL)
+    var selectedMember by mutableStateOf(loadPersistedMember())
     var selectedMemberFilter by mutableStateOf(MemberGroup.ALL)
     var selectedCategory by mutableStateOf(expenseCategories.first())
     var statusMessage by mutableStateOf("")
@@ -77,6 +82,10 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     init {
+        loadCustomCategories()
+        if (selectedCategory !in availableCategories) {
+            selectedCategory = availableCategories.first()
+        }
         reloadSelectedMonth()
     }
 
@@ -122,8 +131,32 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         applyAutoMealNoteIfNeeded()
     }
 
+    fun tryAddCustomCategory(rawName: String): Boolean {
+        val name = rawName.trim()
+        if (name.isBlank()) {
+            statusMessage = "分类不能为空"
+            return false
+        }
+        if (allCategoriesForType(selectedType).any { it == name }) {
+            statusMessage = "分类已存在"
+            return false
+        }
+
+        val customList = if (selectedType == EntryType.EXPENSE) {
+            customExpenseCategories
+        } else {
+            customIncomeCategories
+        }
+        customList.add(name)
+        persistCustomCategories(selectedType)
+        selectedCategory = name
+        statusMessage = "已新增分类"
+        return true
+    }
+
     fun updateEntryMember(member: MemberGroup) {
         selectedMember = member
+        preferences.edit().putString(KEY_LAST_MEMBER, member.code).apply()
     }
 
     fun updateNoteInput(note: String) {
@@ -176,6 +209,52 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         val filtered = monthEntries.filter { matchesMemberFilter(it) }
         entries.clear()
         entries.addAll(filtered)
+    }
+
+    private fun allCategoriesForType(type: EntryType): List<String> {
+        return if (type == EntryType.EXPENSE) {
+            expenseCategories + customExpenseCategories
+        } else {
+            incomeCategories + customIncomeCategories
+        }
+    }
+
+    private fun loadCustomCategories() {
+        customExpenseCategories.clear()
+        customExpenseCategories.addAll(readCustomCategoryList(KEY_CUSTOM_EXPENSE_CATEGORIES))
+        customIncomeCategories.clear()
+        customIncomeCategories.addAll(readCustomCategoryList(KEY_CUSTOM_INCOME_CATEGORIES))
+    }
+
+    private fun readCustomCategoryList(key: String): List<String> {
+        val raw = preferences.getString(key, null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(raw)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val value = array.optString(i).trim()
+                    if (value.isNotBlank()) {
+                        add(value)
+                    }
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun persistCustomCategories(type: EntryType) {
+        val key = if (type == EntryType.EXPENSE) {
+            KEY_CUSTOM_EXPENSE_CATEGORIES
+        } else {
+            KEY_CUSTOM_INCOME_CATEGORIES
+        }
+        val source = if (type == EntryType.EXPENSE) {
+            customExpenseCategories
+        } else {
+            customIncomeCategories
+        }
+        val array = JSONArray()
+        source.forEach { array.put(it) }
+        preferences.edit().putString(key, array.toString()).apply()
     }
 
     private fun matchesMemberFilter(entry: LedgerEntry): Boolean {
@@ -383,5 +462,17 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         if (autoNote != null) {
             noteInput = autoNote
         }
+    }
+
+    private fun loadPersistedMember(): MemberGroup {
+        val code = preferences.getString(KEY_LAST_MEMBER, MemberGroup.ALL.code)
+        return MemberGroup.fromCode(code)
+    }
+
+    companion object {
+        private const val PREFS_NAME = "pocket_ledger_settings"
+        private const val KEY_LAST_MEMBER = "last_selected_member"
+        private const val KEY_CUSTOM_EXPENSE_CATEGORIES = "custom_expense_categories"
+        private const val KEY_CUSTOM_INCOME_CATEGORIES = "custom_income_categories"
     }
 }

@@ -91,16 +91,10 @@ fun LedgerScreen(vm: LedgerViewModel) {
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        items(1) { FilterBar(vm) }
         items(1) { SummaryCard(vm) }
         items(1) { EntryForm(vm) }
-        items(1) { FilterBar(vm) }
         items(1) { MemberFilterBar(vm) }
-        items(1) {
-            BackupRestoreBar(
-                onBackup = { backupLauncher.launch(null) },
-                onRestore = { restoreLauncher.launch(null) },
-            )
-        }
         items(1) { MonthNavigator(vm) }
         if (vm.statusMessage.isNotBlank()) {
             items(1) { Text(vm.statusMessage, color = MaterialTheme.colorScheme.primary) }
@@ -111,6 +105,12 @@ fun LedgerScreen(vm: LedgerViewModel) {
                 e = e,
                 onEdit = { editingEntry = it },
                 onDelete = { deletingEntry = it },
+            )
+        }
+        items(1) {
+            BackupRestoreBar(
+                onBackup = { backupLauncher.launch(null) },
+                onRestore = { restoreLauncher.launch(null) },
             )
         }
     }
@@ -260,20 +260,24 @@ private fun FilterBar(vm: LedgerViewModel) {
 @Composable
 private fun MemberFilterBar(vm: LedgerViewModel) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .padding(12.dp)
-                .horizontalScroll(rememberScrollState())
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            vm.memberGroups.forEachIndexed { index, member ->
-                OutlinedButton(
-                    onClick = { vm.updateMemberFilter(member) },
-                    enabled = vm.selectedMemberFilter != member,
-                ) {
-                    Text(member.label)
-                }
-                if (index != vm.memberGroups.lastIndex) {
-                    Spacer(modifier = Modifier.width(8.dp))
+            Text("成员视图", fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState())
+            ) {
+                vm.memberGroups.forEachIndexed { index, member ->
+                    OutlinedButton(
+                        onClick = { vm.updateMemberFilter(member) },
+                        enabled = vm.selectedMemberFilter != member,
+                    ) {
+                        Text(member.label)
+                    }
+                    if (index != vm.memberGroups.lastIndex) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
                 }
             }
         }
@@ -284,6 +288,8 @@ private fun MemberFilterBar(vm: LedgerViewModel) {
 private fun EntryForm(vm: LedgerViewModel) {
     var expanded by remember { mutableStateOf(false) }
     var memberExpanded by remember { mutableStateOf(false) }
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var newCategoryInput by remember { mutableStateOf("") }
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val dateTimeText = vm.selectedDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
@@ -405,6 +411,14 @@ private fun EntryForm(vm: LedgerViewModel) {
                         }
                     )
                 }
+                DropdownMenuItem(
+                    text = { Text("+ 新增分类") },
+                    onClick = {
+                        expanded = false
+                        newCategoryInput = ""
+                        showAddCategoryDialog = true
+                    }
+                )
             }
 
             OutlinedTextField(
@@ -422,6 +436,39 @@ private fun EntryForm(vm: LedgerViewModel) {
                 Text("保存")
             }
         }
+    }
+
+    if (showAddCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddCategoryDialog = false },
+            title = { Text("新增分类") },
+            text = {
+                OutlinedTextField(
+                    value = newCategoryInput,
+                    onValueChange = { newCategoryInput = it },
+                    label = { Text("分类名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (vm.tryAddCustomCategory(newCategoryInput)) {
+                            showAddCategoryDialog = false
+                            newCategoryInput = ""
+                        }
+                    }
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCategoryDialog = false }) {
+                    Text("取消")
+                }
+            },
+        )
     }
 }
 
