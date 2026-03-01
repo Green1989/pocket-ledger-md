@@ -2,6 +2,7 @@
 .gradle/
 build/
 **/build/
+temp/
 
 # Android Studio / IntelliJ
 .idea/
