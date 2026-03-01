@@ -351,53 +351,65 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         reloadSelectedMonth()
     }
 
-    fun buildTodayShareText(): String {
-        val targetDate = selectedDateTime.toLocalDate()
-        val todayEntries = repository.loadAll()
-            .filter { it.dateTime.toLocalDate() == targetDate }
+    fun buildTodayShareText(shareDays: Int = 1): String {
+        val startDate = selectedDateTime.toLocalDate()
+        val safeShareDays = shareDays.coerceAtLeast(1)
+        val endDate = startDate.plusDays((safeShareDays - 1).toLong())
+        val rangeEntries = repository.loadAll()
+            .filter {
+                val day = it.dateTime.toLocalDate()
+                !day.isBefore(startDate) && !day.isAfter(endDate)
+            }
             .filter { matchesMemberFilter(it) }
             .sortedBy { it.dateTime }
+        val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+        val lineFormatter = DateTimeFormatter.ofPattern("HH:mm")
+        val startText = startDate.format(dateFormatter)
+        val endText = endDate.format(dateFormatter)
 
-        val dateText = targetDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-        val readableText = if (todayEntries.isEmpty()) {
-            """
-【$dateText 记账汇总】
-今日无记账记录
-            """.trimIndent()
+        val summary = repository.summarize(rangeEntries)
+        val builder = StringBuilder()
+        if (safeShareDays == 1) {
+            builder.appendLine("【$startText 记账汇总】")
         } else {
-            val summary = repository.summarize(todayEntries)
-            val expenseEntries = todayEntries.filter { it.type == EntryType.EXPENSE }
-            val incomeEntries = todayEntries.filter { it.type == EntryType.INCOME }
-            val lineFormatter = DateTimeFormatter.ofPattern("HH:mm")
-
-            val builder = StringBuilder()
-            builder.appendLine("【$dateText 记账汇总】")
-            builder.appendLine("收入：${summary.totalIncome}")
-            builder.appendLine("支出：${summary.totalExpense}")
-            builder.appendLine("结余：${summary.balance}")
-
-            if (expenseEntries.isNotEmpty()) {
-                builder.appendLine()
-                builder.appendLine("支出明细：")
-                expenseEntries.forEach { entry ->
-                    val note = if (entry.note.isBlank()) "" else " ${entry.note}"
-                    builder.appendLine("${entry.dateTime.format(lineFormatter)} ${entry.displayCategoryText()} ${entry.amount}$note")
-                }
-            }
-
-            if (incomeEntries.isNotEmpty()) {
-                builder.appendLine()
-                builder.appendLine("收入明细：")
-                incomeEntries.forEach { entry ->
-                    val note = if (entry.note.isBlank()) "" else " ${entry.note}"
-                    builder.appendLine("${entry.dateTime.format(lineFormatter)} ${entry.displayCategoryText()} ${entry.amount}$note")
-                }
-            }
-
-            builder.toString().trimEnd()
+            builder.appendLine("【$startText 至 $endText 记账汇总】")
         }
+        builder.appendLine("收入：${summary.totalIncome}")
+        builder.appendLine("支出：${summary.totalExpense}")
+        builder.appendLine("结余：${summary.balance}")
+        builder.appendLine()
+        builder.appendLine("每日明细：")
 
-        return ShareSyncCodec.appendSyncBlock(readableText, targetDate, todayEntries)
+        for (offset in 0 until safeShareDays) {
+            val day = startDate.plusDays(offset.toLong())
+            val dayText = day.format(dateFormatter)
+            builder.appendLine("$dayText：")
+            val dayEntries = rangeEntries
+                .filter { it.dateTime.toLocalDate() == day }
+                .sortedBy { it.dateTime }
+            if (dayEntries.isEmpty()) {
+                builder.appendLine("无记账记录")
+                continue
+            }
+            dayEntries.forEach { entry ->
+                val typeText = if (entry.type == EntryType.EXPENSE) "支出" else "收入"
+                val note = if (entry.note.isBlank()) "" else " ${entry.note}"
+                builder.appendLine(
+                    "${entry.dateTime.format(lineFormatter)} $typeText ${entry.displayCategoryText()} ${entry.amount}$note"
+                )
+            }
+        }
+        val readableText = builder.toString().trimEnd()
+
+        return ShareSyncCodec.appendSyncBlock(readableText, startDate, rangeEntries)
+    }
+
+    fun getLastCustomShareDays(): Int {
+        return preferences.getInt(KEY_LAST_SHARE_DAYS, 1).coerceAtLeast(1)
+    }
+
+    fun persistLastCustomShareDays(days: Int) {
+        preferences.edit().putInt(KEY_LAST_SHARE_DAYS, days.coerceAtLeast(1)).apply()
     }
 
     fun syncFromClipboardText(rawText: String) {
@@ -474,5 +486,6 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_LAST_MEMBER = "last_selected_member"
         private const val KEY_CUSTOM_EXPENSE_CATEGORIES = "custom_expense_categories"
         private const val KEY_CUSTOM_INCOME_CATEGORIES = "custom_income_categories"
+        private const val KEY_LAST_SHARE_DAYS = "last_share_days"
     }
 }

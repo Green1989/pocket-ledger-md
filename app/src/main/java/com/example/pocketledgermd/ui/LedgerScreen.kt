@@ -4,17 +4,23 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
@@ -38,6 +44,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.example.pocketledgermd.data.EntryType
 import com.example.pocketledgermd.data.LedgerEntry
@@ -290,6 +297,8 @@ private fun EntryForm(vm: LedgerViewModel) {
     var memberExpanded by remember { mutableStateOf(false) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryInput by remember { mutableStateOf("") }
+    var showShareDaysDialog by remember { mutableStateOf(false) }
+    var shareDaysInput by remember { mutableStateOf("1") }
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val dateTimeText = vm.selectedDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
@@ -380,15 +389,17 @@ private fun EntryForm(vm: LedgerViewModel) {
                 OutlinedButton(onClick = { expanded = true }) {
                     Text("分类: ${vm.selectedCategory}")
                 }
-                OutlinedButton(
+                ShareActionButton(
                     onClick = {
-                        val shareText = vm.buildTodayShareText()
+                        val shareText = vm.buildTodayShareText(1)
                         clipboardManager.setText(AnnotatedString(shareText))
                         vm.statusMessage = "已复制当天记账内容"
-                    }
-                ) {
-                    Text("分享")
-                }
+                    },
+                    onLongClick = {
+                        shareDaysInput = vm.getLastCustomShareDays().toString()
+                        showShareDaysDialog = true
+                    },
+                )
             }
             DropdownMenu(expanded = memberExpanded, onDismissRequest = { memberExpanded = false }) {
                 vm.memberGroups.forEach { member ->
@@ -469,6 +480,65 @@ private fun EntryForm(vm: LedgerViewModel) {
                 }
             },
         )
+    }
+
+    if (showShareDaysDialog) {
+        AlertDialog(
+            onDismissRequest = { showShareDaysDialog = false },
+            title = { Text("分享天数") },
+            text = {
+                OutlinedTextField(
+                    value = shareDaysInput,
+                    onValueChange = { shareDaysInput = it.filter { ch -> ch.isDigit() }.take(3) },
+                    label = { Text("天数") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val days = shareDaysInput.toIntOrNull()
+                        if (days == null || days <= 0) {
+                            vm.statusMessage = "分享天数必须大于 0"
+                            return@TextButton
+                        }
+                        vm.persistLastCustomShareDays(days)
+                        val shareText = vm.buildTodayShareText(days)
+                        clipboardManager.setText(AnnotatedString(shareText))
+                        vm.statusMessage = "已复制${days}天记账内容"
+                        showShareDaysDialog = false
+                    }
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showShareDaysDialog = false }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ShareActionButton(
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(20.dp)
+    Box(
+        modifier = Modifier
+            .defaultMinSize(minHeight = 40.dp)
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+    ) {
+        Text("分享")
     }
 }
 
