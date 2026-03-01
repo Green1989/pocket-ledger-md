@@ -116,7 +116,7 @@ object MarkdownCodec {
         val dayIndex = lines.indexOfFirst { it.trim() == dayHeader }
         if (dayIndex == -1) {
             while (lines.isNotEmpty() && lines.last().isBlank()) {
-                lines.removeLast()
+                lines.removeAt(lines.lastIndex)
             }
             lines.add("")
             lines.add(dayHeader)

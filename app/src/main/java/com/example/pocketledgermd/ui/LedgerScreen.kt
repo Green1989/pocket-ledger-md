@@ -378,6 +378,21 @@ private fun EntryForm(vm: LedgerViewModel) {
                     Text("同步")
                 }
             }
+            if (vm.hasSyncDiagnostics) {
+                OutlinedButton(
+                    onClick = {
+                        val diagnosticsText = vm.readLatestSyncDiagnostics()
+                        if (diagnosticsText.isNullOrBlank()) {
+                            vm.statusMessage = "暂无同步诊断日志"
+                        } else {
+                            clipboardManager.setText(AnnotatedString(diagnosticsText))
+                            vm.statusMessage = "已复制同步诊断日志"
+                        }
+                    }
+                ) {
+                    Text("复制诊断日志")
+                }
+            }
 
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),

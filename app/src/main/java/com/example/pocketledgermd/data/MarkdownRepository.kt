@@ -236,14 +236,18 @@ class MarkdownRepository(private val context: Context) {
         var skipped = 0
 
         entries.sortedBy { it.dateTime }.forEach { raw ->
-            val id = raw.id?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
-            if (id in existingIds) {
+            try {
+                val id = raw.id?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+                if (id in existingIds) {
+                    skipped++
+                    return@forEach
+                }
+                saveEntry(raw.copy(id = id))
+                existingIds.add(id)
+                imported++
+            } catch (_: Exception) {
                 skipped++
-                return@forEach
             }
-            saveEntry(raw.copy(id = id))
-            existingIds.add(id)
-            imported++
         }
 
         return SyncImportResult(

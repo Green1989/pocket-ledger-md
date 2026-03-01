@@ -15,8 +15,10 @@ import com.example.pocketledgermd.data.MarkdownRepository
 import com.example.pocketledgermd.data.MemberGroup
 import com.example.pocketledgermd.data.MonthSummary
 import com.example.pocketledgermd.data.ShareSyncCodec
+import com.example.pocketledgermd.data.SyncDiagnosticsLogger
 import com.example.pocketledgermd.data.SyncParseResult
 import com.example.pocketledgermd.data.displayCategoryText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -40,6 +42,7 @@ enum class DateFilter {
 class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = MarkdownRepository(app.applicationContext)
     private val preferences = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val syncDiagnosticsLogger = SyncDiagnosticsLogger(app.applicationContext)
     val memberGroups = listOf(
         MemberGroup.XIAOXIN,
         MemberGroup.JIELI,
@@ -65,6 +68,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     var selectedMemberFilter by mutableStateOf(MemberGroup.ALL)
     var selectedCategory by mutableStateOf(expenseCategories.first())
     var statusMessage by mutableStateOf("")
+    var hasSyncDiagnostics by mutableStateOf(syncDiagnosticsLogger.hasAnyLogs())
     var selectedDateTime by mutableStateOf(LocalDateTime.now())
     var selectedMonth by mutableStateOf(YearMonth.now())
     var selectedFilter by mutableStateOf(DateFilter.MONTH)
@@ -412,22 +416,72 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         preferences.edit().putInt(KEY_LAST_SHARE_DAYS, days.coerceAtLeast(1)).apply()
     }
 
+    fun readLatestSyncDiagnostics(): String? {
+        return syncDiagnosticsLogger.readLatestLog()
+    }
+
     fun syncFromClipboardText(rawText: String) {
-        when (val parsed = ShareSyncCodec.parse(rawText)) {
-            is SyncParseResult.NotFound -> {
-                statusMessage = "未检测到可同步记账内容"
-            }
+        viewModelScope.launch {
+            try {
+                val parsed = withContext(Dispatchers.Default) {
+                    ShareSyncCodec.parse(rawText)
+                }
+                when (parsed) {
+                    is SyncParseResult.NotFound -> {
+                        val logName = recordSyncFailure(
+                            stage = "parse",
+                            reason = "未检测到同步数据块",
+                            rawText = rawText,
+                        )
+                        statusMessage = "未检测到可同步记账内容（已记录 $logName）"
+                    }
 
-            is SyncParseResult.Invalid -> {
-                statusMessage = "同步失败：${parsed.message}"
-            }
+                    is SyncParseResult.Invalid -> {
+                        val logName = recordSyncFailure(
+                            stage = "parse",
+                            reason = parsed.message,
+                            rawText = rawText,
+                        )
+                        statusMessage = "同步失败：${parsed.message}（已记录 $logName）"
+                    }
 
-            is SyncParseResult.Success -> {
-                val result = repository.importEntries(parsed.payload.entries)
-                statusMessage = "${result.message}: 新增 ${result.importedCount} 条，跳过 ${result.skippedCount} 条"
-                reloadSelectedMonth()
+                    is SyncParseResult.Success -> {
+                        val result = withContext(Dispatchers.IO) {
+                            repository.importEntries(parsed.payload.entries)
+                        }
+                        statusMessage = "${result.message}: 新增 ${result.importedCount} 条，跳过 ${result.skippedCount} 条"
+                        reloadSelectedMonth()
+                    }
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                val logName = recordSyncFailure(
+                    stage = "import",
+                    reason = t.message ?: "未知错误",
+                    rawText = rawText,
+                    throwable = t,
+                )
+                statusMessage = "同步失败：${t.message ?: "未知错误"}（已记录 $logName）"
             }
         }
+    }
+
+    private suspend fun recordSyncFailure(
+        stage: String,
+        reason: String,
+        rawText: String,
+        throwable: Throwable? = null,
+    ): String {
+        val file = withContext(Dispatchers.IO) {
+            syncDiagnosticsLogger.writeFailureLog(
+                stage = stage,
+                reason = reason,
+                rawPayload = rawText,
+                throwable = throwable,
+            )
+        }
+        hasSyncDiagnostics = true
+        return file.name
     }
 
     fun backupLedgerToDirectory(treeUri: Uri) {
