@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -38,6 +39,13 @@ enum class DateFilter {
     YEAR,
     ALL,
 }
+
+data class CategoryAggregationSummary(
+    val categoryDisplay: String,
+    val totalAmount: BigDecimal,
+    val percentOfTypeTotal: BigDecimal,
+    val itemCount: Int,
+)
 
 class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = MarkdownRepository(app.applicationContext)
@@ -72,6 +80,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     var selectedDateTime by mutableStateOf(LocalDateTime.now())
     var selectedMonth by mutableStateOf(YearMonth.now())
     var selectedFilter by mutableStateOf(DateFilter.MONTH)
+    var selectedAggregationType by mutableStateOf(EntryType.EXPENSE)
     private var noteEditedManually = false
 
     private val monthEntries = mutableStateListOf<LedgerEntry>()
@@ -113,7 +122,12 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateFilter(filter: DateFilter) {
         selectedFilter = filter
+        refreshVisibleEntries()
         refreshSummary()
+    }
+
+    fun updateAggregationType(type: EntryType) {
+        selectedAggregationType = type
     }
 
     fun updateMemberFilter(member: MemberGroup) {
@@ -210,9 +224,9 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun refreshVisibleEntries() {
-        val filtered = monthEntries.filter { matchesMemberFilter(it) }
+        val filtered = currentFilteredEntries()
         entries.clear()
-        entries.addAll(filtered)
+        entries.addAll(filtered.sortedByDescending { it.dateTime })
     }
 
     private fun allCategoriesForType(type: EntryType): List<String> {
@@ -263,11 +277,10 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun matchesMemberFilter(entry: LedgerEntry): Boolean {
         return selectedMemberFilter == MemberGroup.ALL ||
-            entry.member == selectedMemberFilter ||
-            entry.member == MemberGroup.ALL
+            entry.member == selectedMemberFilter
     }
 
-    private fun refreshSummary() {
+    private fun entriesForSelectedFilterWithoutMember(): List<LedgerEntry> {
         val today = LocalDate.now()
         val weekStart = today.minusDays((today.dayOfWeek.value - 1).toLong())
         val weekEnd = weekStart.plusDays(6)
@@ -278,18 +291,57 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             DateFilter.ALL -> repository.loadAll()
             DateFilter.TODAY, DateFilter.WEEK -> repository.loadAll()
         }
-        val memberFiltered = baseEntries.filter { matchesMemberFilter(it) }
 
-        val filtered = when (selectedFilter) {
-            DateFilter.TODAY -> memberFiltered.filter { it.dateTime.toLocalDate() == today }
-            DateFilter.WEEK -> memberFiltered.filter {
+        return when (selectedFilter) {
+            DateFilter.TODAY -> baseEntries.filter { it.dateTime.toLocalDate() == today }
+            DateFilter.WEEK -> baseEntries.filter {
                 val day = it.dateTime.toLocalDate()
                 !day.isBefore(weekStart) && !day.isAfter(weekEnd)
             }
-            DateFilter.MONTH, DateFilter.YEAR, DateFilter.ALL -> memberFiltered
+            DateFilter.MONTH, DateFilter.YEAR, DateFilter.ALL -> baseEntries
         }
+    }
 
-        summary = repository.summarize(filtered)
+    private fun currentFilteredEntries(): List<LedgerEntry> {
+        return entriesForSelectedFilterWithoutMember().filter { matchesMemberFilter(it) }
+    }
+
+    private fun refreshSummary() {
+        summary = repository.summarize(entries.toList())
+    }
+
+    fun categoryAggregationSummaries(): List<CategoryAggregationSummary> {
+        val targetEntries = entries.filter { it.type == selectedAggregationType }
+        if (targetEntries.isEmpty()) return emptyList()
+
+        val totalAmount = targetEntries.fold(BigDecimal.ZERO) { acc, item -> acc + item.amount }
+        if (totalAmount <= BigDecimal.ZERO) return emptyList()
+
+        return targetEntries
+            .groupBy { it.displayCategoryText() }
+            .map { (categoryDisplay, groupedEntries) ->
+                val categoryTotal = groupedEntries.fold(BigDecimal.ZERO) { acc, item -> acc + item.amount }
+                val ratio = if (totalAmount == BigDecimal.ZERO) {
+                    BigDecimal.ZERO
+                } else {
+                    categoryTotal
+                        .multiply(BigDecimal("100"))
+                        .divide(totalAmount, 2, RoundingMode.HALF_UP)
+                }
+                CategoryAggregationSummary(
+                    categoryDisplay = categoryDisplay,
+                    totalAmount = categoryTotal,
+                    percentOfTypeTotal = ratio,
+                    itemCount = groupedEntries.size,
+                )
+            }
+            .sortedByDescending { it.totalAmount }
+    }
+
+    fun entriesByCategory(categoryDisplay: String): List<LedgerEntry> {
+        return entries
+            .filter { it.type == selectedAggregationType && it.displayCategoryText() == categoryDisplay }
+            .sortedByDescending { it.dateTime }
     }
 
     fun saveEntry() {

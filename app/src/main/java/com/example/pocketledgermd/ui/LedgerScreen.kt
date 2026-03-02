@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -68,6 +69,7 @@ private fun DateFilter.displayLabel(): String = when (this) {
 fun LedgerScreen(vm: LedgerViewModel) {
     var editingEntry by remember { mutableStateOf<LedgerEntry?>(null) }
     var deletingEntry by remember { mutableStateOf<LedgerEntry?>(null) }
+    var selectedCategoryDetail by remember { mutableStateOf<String?>(null) }
     var restorePendingUri by remember { mutableStateOf<android.net.Uri?>(null) }
     val context = LocalContext.current
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -106,13 +108,39 @@ fun LedgerScreen(vm: LedgerViewModel) {
         if (vm.statusMessage.isNotBlank()) {
             items(1) { Text(vm.statusMessage, color = MaterialTheme.colorScheme.primary) }
         }
-        items(1) { Text("记录", style = MaterialTheme.typography.titleMedium) }
-        items(vm.entries) { e ->
-            EntryCard(
-                e = e,
-                onEdit = { editingEntry = it },
-                onDelete = { deletingEntry = it },
-            )
+        if (selectedCategoryDetail == null) {
+            items(1) { Text("分类支出", style = MaterialTheme.typography.titleMedium) }
+            val categorySummaries = vm.categoryAggregationSummaries()
+            if (categorySummaries.isEmpty()) {
+                items(1) { Text("当前范围暂无支出分类") }
+            } else {
+                items(categorySummaries, key = { it.categoryDisplay }) { summary ->
+                    ExpenseCategoryCard(
+                        summary = summary,
+                        onClick = { selectedCategoryDetail = summary.categoryDisplay },
+                    )
+                }
+            }
+        } else {
+            val categoryDisplay = selectedCategoryDetail!!
+            items(1) {
+                CategoryDetailHeader(
+                    categoryDisplay = categoryDisplay,
+                    onBack = { selectedCategoryDetail = null },
+                )
+            }
+            val details = vm.entriesByCategory(categoryDisplay)
+            if (details.isEmpty()) {
+                items(1) { Text("该分类暂无明细") }
+            } else {
+                items(details) { e ->
+                    EntryCard(
+                        e = e,
+                        onEdit = { editingEntry = it },
+                        onDelete = { deletingEntry = it },
+                    )
+                }
+            }
         }
         items(1) {
             BackupRestoreBar(
@@ -175,6 +203,55 @@ fun LedgerScreen(vm: LedgerViewModel) {
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun ExpenseCategoryCard(
+    summary: CategoryAggregationSummary,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(summary.categoryDisplay, fontWeight = FontWeight.Bold)
+                Text("占比: ${summary.percentOfTypeTotal}%")
+                Text("笔数: ${summary.itemCount}")
+            }
+            Text(
+                "¥${summary.totalAmount.setScale(2, RoundingMode.HALF_UP)}",
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryDetailHeader(
+    categoryDisplay: String,
+    onBack: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            OutlinedButton(onClick = onBack) {
+                Text("返回")
+            }
+            Text(categoryDisplay, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        }
     }
 }
 
