@@ -31,6 +31,9 @@ This project has gone beyond the original MVP and currently includes:
 
 Open this folder in Android Studio and run module `app`.
 
+You can also build from terminal with Gradle wrapper.
+Wrapper is pinned to stable `Gradle 8.7`.
+
 Build config:
 
 - `compileSdk = 36`
@@ -38,11 +41,20 @@ Build config:
 - `targetSdk = 34`
 - Kotlin/JVM target `17`
 
-Required local Android SDK:
+Required local environment:
 
+- JDK `17` (recommended: bundled JDK from Android Studio)
 - Android SDK Platform 36
 - Android SDK Build-Tools 36+
 - Android SDK Platform-Tools
+
+Common commands:
+
+- Windows build debug APK: `.\gradlew.bat :app:assembleDebug`
+- Windows Kotlin compile check: `.\gradlew.bat :app:compileDebugKotlin`
+- Windows unit tests: `.\gradlew.bat :app:testDebugUnitTest`
+- macOS/Linux build debug APK: `./gradlew :app:assembleDebug`
+- macOS/Linux unit tests: `./gradlew :app:testDebugUnitTest`
 
 ## Data Storage Layout
 
@@ -104,7 +116,8 @@ Notes:
 ## UI Behavior Notes
 
 - Default entry type: expense
-- Member options: 少鑫, 洁丽, 童童, 老人, 所有人
+- Member options (entry object): 少鑫, 洁丽, 童童, 老人, 所有人
+- Member view filters: 全部(聚合), 少鑫, 洁丽, 童童, 老人, 所有人(仅 `member=all`)
 - If type is expense + category is `餐饮`, note may auto-fill based on hour:
   - 06-10 早餐
   - 11-12 午餐
@@ -123,11 +136,13 @@ Notes:
 Unit tests currently cover:
 
 - Markdown codec round-trip and parsing edge cases
+- Repository update/delete/import/snapshot key paths
 - Sync codec round-trip and legacy compatibility
 
 Test sources:
 
 - `app/src/test/java/com/example/pocketledgermd/data/MarkdownCodecTest.kt`
+- `app/src/test/java/com/example/pocketledgermd/data/MarkdownRepositoryTest.kt`
 - `app/src/test/java/com/example/pocketledgermd/data/ShareSyncCodecTest.kt`
 
 ## Non-Goals
