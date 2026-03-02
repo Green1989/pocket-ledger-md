@@ -67,4 +67,104 @@ E|legacy-id|2026-03-01T09:30:00|expense|10.00|%E9%A4%90%E9%A5%AE|%E6%97%A9%E9%A4
         assertEquals(1, payload.entries.size)
         assertEquals(MemberGroup.ALL, payload.entries[0].member)
     }
+
+    @Test
+    fun parse_shouldReturnInvalid_whenSyncEndMissing() {
+        val text = """
+---POCKET_LEDGER_SYNC_START---
+V|2
+D|2026-03-01
+E|id-1|2026-03-01T09:30:00|expense|all|10.00|%E9%A4%90%E9%A5%AE|%E6%97%A9%E9%A4%90
+        """.trimIndent()
+
+        val parsed = ShareSyncCodec.parse(text)
+        assertTrue(parsed is SyncParseResult.Invalid)
+        assertEquals("同步数据格式不完整", (parsed as SyncParseResult.Invalid).message)
+    }
+
+    @Test
+    fun parse_shouldReturnInvalid_whenVersionUnsupported() {
+        val text = """
+---POCKET_LEDGER_SYNC_START---
+V|9
+D|2026-03-01
+---POCKET_LEDGER_SYNC_END---
+        """.trimIndent()
+
+        val parsed = ShareSyncCodec.parse(text)
+        assertTrue(parsed is SyncParseResult.Invalid)
+        assertEquals("不支持的同步版本", (parsed as SyncParseResult.Invalid).message)
+    }
+
+    @Test
+    fun parse_shouldReturnInvalid_whenEntryTypeMalformed() {
+        val text = """
+---POCKET_LEDGER_SYNC_START---
+V|2
+D|2026-03-01
+E|id-1|2026-03-01T09:30:00|unknown|all|10.00|%E9%A4%90%E9%A5%AE|%E6%97%A9%E9%A4%90
+---POCKET_LEDGER_SYNC_END---
+        """.trimIndent()
+
+        val parsed = ShareSyncCodec.parse(text)
+        assertTrue(parsed is SyncParseResult.Invalid)
+        assertEquals("同步类型格式错误", (parsed as SyncParseResult.Invalid).message)
+    }
+
+    @Test
+    fun parse_shouldReturnInvalid_whenEntryAmountMalformed() {
+        val text = """
+---POCKET_LEDGER_SYNC_START---
+V|2
+D|2026-03-01
+E|id-1|2026-03-01T09:30:00|expense|all|abc|%E9%A4%90%E9%A5%AE|%E6%97%A9%E9%A4%90
+---POCKET_LEDGER_SYNC_END---
+        """.trimIndent()
+
+        val parsed = ShareSyncCodec.parse(text)
+        assertTrue(parsed is SyncParseResult.Invalid)
+        assertEquals("同步金额格式错误", (parsed as SyncParseResult.Invalid).message)
+    }
+
+    @Test
+    fun parse_shouldReturnSuccessWithEmptyEntries_whenSyncBlockHasNoEntry() {
+        val text = """
+---POCKET_LEDGER_SYNC_START---
+V|2
+D|2026-03-01
+---POCKET_LEDGER_SYNC_END---
+        """.trimIndent()
+
+        val parsed = ShareSyncCodec.parse(text)
+        assertTrue(parsed is SyncParseResult.Success)
+        val payload = (parsed as SyncParseResult.Success).payload
+        assertEquals(LocalDate.of(2026, 3, 1), payload.date)
+        assertTrue(payload.entries.isEmpty())
+    }
+
+    @Test
+    fun parse_shouldHandleVeryLargePrefixText_whenSyncBlockExists() {
+        val hugePrefix = "x".repeat(200_000)
+        val text = """
+$hugePrefix
+---POCKET_LEDGER_SYNC_START---
+V|2
+D|2026-03-01
+E|id-1|2026-03-01T09:30:00|expense|all|10.00|%E9%A4%90%E9%A5%AE|%E6%97%A9%E9%A4%90
+---POCKET_LEDGER_SYNC_END---
+        """.trimIndent()
+
+        val parsed = ShareSyncCodec.parse(text)
+        assertTrue(parsed is SyncParseResult.Success)
+        val payload = (parsed as SyncParseResult.Success).payload
+        assertEquals(1, payload.entries.size)
+        assertEquals("id-1", payload.entries.first().id)
+    }
+
+    @Test
+    fun parse_shouldReturnNotFound_whenVeryLargeTextHasNoSyncBlock() {
+        val text = "普通文本".repeat(150_000)
+        val parsed = ShareSyncCodec.parse(text)
+        assertTrue(parsed is SyncParseResult.NotFound)
+    }
 }

@@ -2,6 +2,7 @@ package com.example.pocketledgermd.data
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
@@ -56,25 +57,9 @@ class MarkdownRepository(private val context: Context) {
             return entry.copy(id = UUID.randomUUID().toString())
         }
 
-        val lines = file.readText().replace("\r\n", "\n").split("\n").toMutableList()
-        var currentDay: LocalDate? = null
-        var matchedIndex = -1
-        for (i in lines.indices) {
-            val raw = lines[i]
-            val line = raw.trim()
-            when {
-                line.startsWith("## ") -> {
-                    currentDay = runCatching { LocalDate.parse(line.removePrefix("## ").trim()) }.getOrNull()
-                }
-                line.startsWith("- ") && currentDay != null -> {
-                    val day = currentDay
-                    val parsed = MarkdownCodec.parseEntryLine(day, line) ?: continue
-                    if (parsed.id == null && sameEntryContent(parsed, entry)) {
-                        matchedIndex = i
-                        break
-                    }
-                }
-            }
+        val lines = readNormalizedLines(file)
+        val matchedIndex = findMatchingEntryLineIndex(lines) { parsed ->
+            parsed.id == null && sameEntryContent(parsed, entry)
         }
 
         if (matchedIndex == -1) {
@@ -115,32 +100,16 @@ class MarkdownRepository(private val context: Context) {
         val file = monthFile(month)
         if (!file.exists()) return
 
-        val lines = file.readText().replace("\r\n", "\n").split("\n").toMutableList()
-        var currentDay: LocalDate? = null
-        var removed = false
-
-        for (i in lines.indices) {
-            val raw = lines[i]
-            val line = raw.trim()
-            when {
-                line.startsWith("## ") -> {
-                    currentDay = runCatching { LocalDate.parse(line.removePrefix("## ").trim()) }.getOrNull()
-                }
-                line.startsWith("- ") && currentDay != null -> {
-                    val day = currentDay
-                    val parsed = MarkdownCodec.parseEntryLine(day, line) ?: continue
-                    val idMatched = !entry.id.isNullOrBlank() && parsed.id == entry.id
-                    val legacyMatched = entry.id.isNullOrBlank() && sameEntryContent(parsed, entry)
-                    if (idMatched || legacyMatched) {
-                        lines.removeAt(i)
-                        removed = true
-                        break
-                    }
-                }
-            }
+        val lines = readNormalizedLines(file)
+        val hasId = !entry.id.isNullOrBlank()
+        val matchedIndex = findMatchingEntryLineIndex(lines) { parsed ->
+            val idMatched = hasId && parsed.id == entry.id
+            val legacyMatched = !hasId && sameEntryContent(parsed, entry)
+            idMatched || legacyMatched
         }
+        if (matchedIndex == -1) return
 
-        if (!removed) return
+        lines.removeAt(matchedIndex)
         file.writeText(lines.joinToString("\n").trimEnd() + "\n")
     }
 
@@ -245,8 +214,9 @@ class MarkdownRepository(private val context: Context) {
                 saveEntry(raw.copy(id = id))
                 existingIds.add(id)
                 imported++
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 skipped++
+                Log.w(TAG, "importEntries: failed to save entry id=${raw.id}", e)
             }
         }
 
@@ -261,8 +231,7 @@ class MarkdownRepository(private val context: Context) {
     fun backupToExternalTree(treeUri: Uri): FileTransferResult {
         val root = DocumentFile.fromTreeUri(context, treeUri)
             ?: return FileTransferResult(false, "无法打开目标目录")
-        val targetLedgerDir = root.findFile("ledger")
-            ?: root.createDirectory("ledger")
+        val targetLedgerDir = ensureTargetLedgerDir(root)
             ?: return FileTransferResult(false, "无法创建 ledger 目录")
 
         val sourceFiles = listMonthFiles()
@@ -270,28 +239,9 @@ class MarkdownRepository(private val context: Context) {
         var skippedCount = 0
 
         for (file in sourceFiles) {
-            try {
-                val existing = targetLedgerDir.findFile(file.name)
-                if (existing != null && existing.isFile) {
-                    existing.delete()
-                }
-                val target = targetLedgerDir.createFile("text/markdown", file.name)
-                if (target == null) {
-                    skippedCount++
-                    continue
-                }
-
-                context.contentResolver.openOutputStream(target.uri, "w").use { output ->
-                    if (output == null) {
-                        skippedCount++
-                        return@use
-                    }
-                    file.inputStream().use { input ->
-                        input.copyTo(output)
-                    }
-                    successCount++
-                }
-            } catch (_: Exception) {
+            if (backupSingleFile(file, targetLedgerDir)) {
+                successCount++
+            } else {
                 skippedCount++
             }
         }
@@ -309,10 +259,7 @@ class MarkdownRepository(private val context: Context) {
         val root = DocumentFile.fromTreeUri(context, treeUri)
             ?: return FileTransferResult(false, "无法打开源目录")
 
-        val sourceRoot = when {
-            root.findFile("ledger")?.isDirectory == true -> root.findFile("ledger")!!
-            else -> root
-        }
+        val sourceRoot = resolveRestoreSourceRoot(root)
 
         val sourceFiles = sourceRoot.listFiles().filter { it.isFile }
         val validSourceFiles = sourceFiles.filter { monthFilePattern.matches(it.name.orEmpty()) }
@@ -327,24 +274,9 @@ class MarkdownRepository(private val context: Context) {
             var restoredCount = 0
             var skippedCount = 0
             for (doc in validSourceFiles) {
-                try {
-                    val name = doc.name
-                    if (name == null) {
-                        skippedCount++
-                        continue
-                    }
-                    val target = monthFile(YearMonth.parse(name.removeSuffix(".md")))
-                    context.contentResolver.openInputStream(doc.uri).use { input ->
-                        if (input == null) {
-                            skippedCount++
-                            return@use
-                        }
-                        target.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
-                        restoredCount++
-                    }
-                } catch (_: Exception) {
+                if (restoreSingleFile(doc)) {
+                    restoredCount++
+                } else {
                     skippedCount++
                 }
             }
@@ -382,5 +314,84 @@ class MarkdownRepository(private val context: Context) {
         listMonthFiles().forEach { it.delete() }
     }
 
+    private fun readNormalizedLines(file: File): MutableList<String> {
+        return file.readText().replace("\r\n", "\n").split("\n").toMutableList()
+    }
+
+    private fun findMatchingEntryLineIndex(
+        lines: List<String>,
+        matcher: (LedgerEntry) -> Boolean,
+    ): Int {
+        var currentDay: LocalDate? = null
+        for (i in lines.indices) {
+            val raw = lines[i]
+            val line = raw.trim()
+            when {
+                line.startsWith("## ") -> {
+                    currentDay = runCatching { LocalDate.parse(line.removePrefix("## ").trim()) }.getOrNull()
+                }
+
+                line.startsWith("- ") && currentDay != null -> {
+                    val parsed = MarkdownCodec.parseEntryLine(currentDay, line) ?: continue
+                    if (matcher(parsed)) return i
+                }
+            }
+        }
+        return -1
+    }
+
+    private fun ensureTargetLedgerDir(root: DocumentFile): DocumentFile? {
+        return root.findFile("ledger")
+            ?: root.createDirectory("ledger")
+    }
+
+    private fun backupSingleFile(source: File, targetLedgerDir: DocumentFile): Boolean {
+        return try {
+            val existing = targetLedgerDir.findFile(source.name)
+            if (existing != null && existing.isFile) {
+                existing.delete()
+            }
+            val target = targetLedgerDir.createFile("text/markdown", source.name)
+                ?: return false
+
+            context.contentResolver.openOutputStream(target.uri, "w").use { output ->
+                if (output == null) return false
+                source.inputStream().use { input ->
+                    input.copyTo(output)
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "backupSingleFile: failed for ${source.name}", e)
+            false
+        }
+    }
+
+    private fun resolveRestoreSourceRoot(root: DocumentFile): DocumentFile {
+        val ledgerDir = root.findFile("ledger")
+        return if (ledgerDir?.isDirectory == true) ledgerDir else root
+    }
+
+    private fun restoreSingleFile(doc: DocumentFile): Boolean {
+        return try {
+            val name = doc.name ?: return false
+            val target = monthFile(YearMonth.parse(name.removeSuffix(".md")))
+            context.contentResolver.openInputStream(doc.uri).use { input ->
+                if (input == null) return false
+                target.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "restoreSingleFile: failed for ${doc.name}", e)
+            false
+        }
+    }
+
     private fun monthFile(ym: YearMonth): File = File(ledgerDir, "${ym}.md")
+
+    companion object {
+        private const val TAG = "MarkdownRepository"
+    }
 }
