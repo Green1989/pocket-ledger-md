@@ -93,6 +93,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     var selectedDateTime by mutableStateOf(LocalDateTime.now())
     var selectedMonth by mutableStateOf(YearMonth.now())
     var selectedFilter by mutableStateOf(DateFilter.MONTH)
+    var selectedAggregationType by mutableStateOf(EntryType.EXPENSE)
     private var noteEditedManually = false
 
     private val monthEntries = mutableStateListOf<LedgerEntry>()
@@ -139,6 +140,10 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     fun updateMemberFilter(filter: MemberViewFilter) {
         selectedMemberFilter = filter
         refreshEntriesAndSummary()
+    }
+
+    fun updateAggregationType(type: EntryType) {
+        selectedAggregationType = type
     }
 
     fun updateEntryType(type: EntryType) {
@@ -293,7 +298,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun categoryAggregationSummaries(): List<CategoryAggregationSummary> {
-        val targetEntries = entries.filter { it.type == EntryType.EXPENSE }
+        val targetEntries = entries.filter { it.type == selectedAggregationType }
         if (targetEntries.isEmpty()) return emptyList()
 
         val totalAmount = targetEntries.fold(BigDecimal.ZERO) { acc, item -> acc + item.amount }
@@ -322,7 +327,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun entriesByCategory(categoryDisplay: String): List<LedgerEntry> {
         return entries
-            .filter { it.type == EntryType.EXPENSE && it.displayCategoryText() == categoryDisplay }
+            .filter { it.type == selectedAggregationType && it.displayCategoryText() == categoryDisplay }
             .sortedByDescending { it.dateTime }
     }
 

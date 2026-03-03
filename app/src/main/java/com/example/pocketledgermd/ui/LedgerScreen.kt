@@ -17,6 +17,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.pocketledgermd.data.EntryType
 import com.example.pocketledgermd.data.LedgerEntry
 
 @Composable
@@ -63,10 +64,23 @@ fun LedgerScreen(vm: LedgerViewModel) {
             items(1) { Text(vm.statusMessage, color = MaterialTheme.colorScheme.primary) }
         }
         if (selectedCategoryDetail == null) {
-            items(1) { Text("分类支出", style = MaterialTheme.typography.titleMedium) }
+            items(1) {
+                CategoryAggregationTypeBar(
+                    selectedType = vm.selectedAggregationType,
+                    onTypeSelected = { type ->
+                        vm.updateAggregationType(type)
+                        selectedCategoryDetail = null
+                    },
+                )
+            }
             val categorySummaries = vm.categoryAggregationSummaries()
             if (categorySummaries.isEmpty()) {
-                items(1) { Text("当前范围暂无支出分类") }
+                val emptyText = if (vm.selectedAggregationType == EntryType.EXPENSE) {
+                    "当前范围暂无支出分类"
+                } else {
+                    "当前范围暂无收入分类"
+                }
+                items(1) { Text(emptyText) }
             } else {
                 items(categorySummaries, key = { it.categoryDisplay }) { summary ->
                     ExpenseCategoryCard(

@@ -13,7 +13,38 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.pocketledgermd.data.EntryType
 import java.math.RoundingMode
+
+@Composable
+internal fun CategoryAggregationTypeBar(
+    selectedType: EntryType,
+    onTypeSelected: (EntryType) -> Unit,
+) {
+    val title = if (selectedType == EntryType.EXPENSE) "分类支出" else "分类收入"
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(title, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { onTypeSelected(EntryType.EXPENSE) },
+                    enabled = selectedType != EntryType.EXPENSE,
+                ) {
+                    Text("支出聚合")
+                }
+                OutlinedButton(
+                    onClick = { onTypeSelected(EntryType.INCOME) },
+                    enabled = selectedType != EntryType.INCOME,
+                ) {
+                    Text("收入聚合")
+                }
+            }
+        }
+    }
+}
 
 @Composable
 internal fun ExpenseCategoryCard(
