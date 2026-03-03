@@ -13,7 +13,7 @@ This project has gone beyond the original MVP and currently includes:
 - Date filters: today, week, month, year, all
 - Member dimension (multi-member records + member-based view filter)
 - Monthly summary (income, expense, balance)
-- Expense category aggregation and category detail drill-down
+- Expense/income category aggregation and category detail drill-down
 - Custom categories (persisted locally)
 - Clipboard share text generation (1 day and custom N days)
 - Clipboard sync import with structured sync block parsing
