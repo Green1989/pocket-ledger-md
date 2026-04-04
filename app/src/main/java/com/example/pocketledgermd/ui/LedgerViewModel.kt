@@ -55,6 +55,7 @@ data class MemberViewFilter(
 class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = MarkdownRepository(app.applicationContext)
     private val shareTextUseCase = ShareTextUseCase(repository)
+    private val monthlyExcelXmlExportUseCase = MonthlyExcelXmlExportUseCase(app.applicationContext, repository)
     private val preferences = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val syncDiagnosticsLogger = SyncDiagnosticsLogger(app.applicationContext)
     private val clipboardSyncUseCase = ClipboardSyncUseCase(repository, syncDiagnosticsLogger)
@@ -451,6 +452,24 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 result.message
             }
             reloadSelectedMonth()
+        }
+    }
+
+    fun exportMonthlyExcelXml(targetUri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    monthlyExcelXmlExportUseCase.export(
+                        selectedMonth = selectedMonth,
+                        memberFilter = selectedMemberFilter.member,
+                        targetUri = targetUri,
+                    )
+                }
+            }.onSuccess {
+                statusMessage = "已导出 Excel XML"
+            }.onFailure { error ->
+                statusMessage = "导出 Excel XML 失败：${error.message ?: "未知错误"}"
+            }
         }
     }
 

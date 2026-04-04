@@ -28,7 +28,11 @@ private fun DateFilter.displayLabel(): String = when (this) {
 }
 
 @Composable
-internal fun BackupRestoreBar(onBackup: () -> Unit, onRestore: () -> Unit) {
+internal fun BackupRestoreBar(
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
+    onExportExcelXml: () -> Unit,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -41,6 +45,9 @@ internal fun BackupRestoreBar(onBackup: () -> Unit, onRestore: () -> Unit) {
             }
             OutlinedButton(onClick = onRestore) {
                 Text("还原数据")
+            }
+            OutlinedButton(onClick = onExportExcelXml) {
+                Text("导出 Excel")
             }
         }
     }

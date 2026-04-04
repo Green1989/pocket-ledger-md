@@ -28,4 +28,7 @@ externalNativeBuild/
 # Kotlin/Java temp caches
 .kotlin/
 captures/
-
+openspec
+.claude
+.codex
+docs

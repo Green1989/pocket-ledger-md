@@ -18,6 +18,7 @@ This project has gone beyond the original MVP and currently includes:
 - Clipboard share text generation (1 day and custom N days)
 - Clipboard sync import with structured sync block parsing
 - Sync diagnostics logging (copy latest log to clipboard)
+- Monthly Excel XML export (`YYYY-MM.xml`, expense/income worksheets)
 - Backup and restore from external directory (SAF DocumentTree)
 
 ## Core Tech
@@ -116,8 +117,13 @@ Notes:
 ## UI Behavior Notes
 
 - Default entry type: expense
-- Member options (entry object): 少鑫, 洁丽, 童童, 老人, 所有人
-- Member view filters: 全部(聚合), 少鑫, 洁丽, 童童, 老人, 所有人(仅 `member=all`)
+- Member options (entry object): XS, JL, tongtong, 老人, 所有人
+- Member view filters: 全部(聚合), XS, JL, tongtong, 老人, 所有人(仅 `member=all`)
+- Monthly Excel XML export:
+  - Exports current `selectedMonth`
+  - Applies current member filter only
+  - Always generates `支出` and `收入` worksheets
+  - Uses XML Spreadsheet format that Excel/WPS can open directly
 - If type is expense + category is `餐饮`, note may auto-fill based on hour:
   - 06-10 早餐
   - 11-12 午餐
@@ -138,12 +144,14 @@ Unit tests currently cover:
 - Markdown codec round-trip and parsing edge cases
 - Repository update/delete/import/snapshot key paths
 - Sync codec round-trip and legacy compatibility
+- Monthly Excel XML export structure, sorting, member filtering, and XML escaping
 
 Test sources:
 
 - `app/src/test/java/com/example/pocketledgermd/data/MarkdownCodecTest.kt`
 - `app/src/test/java/com/example/pocketledgermd/data/MarkdownRepositoryTest.kt`
 - `app/src/test/java/com/example/pocketledgermd/data/ShareSyncCodecTest.kt`
+- `app/src/test/java/com/example/pocketledgermd/ui/MonthlyExcelXmlExportUseCaseTest.kt`
 
 ## Non-Goals
 

@@ -49,6 +49,13 @@ fun LedgerScreen(vm: LedgerViewModel) {
             restorePendingUri = uri
         }
     }
+    val exportExcelXmlLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/xml")
+    ) { uri ->
+        if (uri != null) {
+            vm.exportMonthlyExcelXml(uri)
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -114,6 +121,7 @@ fun LedgerScreen(vm: LedgerViewModel) {
             BackupRestoreBar(
                 onBackup = { backupLauncher.launch(null) },
                 onRestore = { restoreLauncher.launch(null) },
+                onExportExcelXml = { exportExcelXmlLauncher.launch("${vm.selectedMonth}.xml") },
             )
         }
     }

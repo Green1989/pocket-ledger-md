@@ -9,9 +9,9 @@ enum class EntryType {
 }
 
 enum class MemberGroup(val code: String, val label: String) {
-    XIAOXIN("xiaoxin", "少鑫"),
-    JIELI("jieli", "洁丽"),
-    TONGTONG("tongtong", "童童"),
+    XIAOXIN("xiaoxin", "XS"),
+    JIELI("jieli", "JL"),
+    TONGTONG("tongtong", "tongtong"),
     ELDER("elder", "老人"),
     ALL("all", "所有人");
 
